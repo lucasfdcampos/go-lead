@@ -13,6 +13,8 @@ type CNPJ struct {
 	NomeFantasia string   // Nome Fantasia
 	Socios       []string // Lista de sócios
 	Telefones    []string // Lista de telefones
+	CNAE         string   // CNAE principal (código da atividade econômica)
+	CNAEDesc     string   // Descrição do CNAE
 }
 
 // ExtractCNPJ extrai e valida um CNPJ de um texto

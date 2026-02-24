@@ -29,11 +29,11 @@ func EnrichFromDuckDuckGo(ctx context.Context, cnpj *CNPJ) error {
 	}
 
 	// Tenta buscar por CNPJ
-	socios, razaoSocial, telefones := searchDuckDuckGo(ctx, cnpj.Number, "cnpj")
+	socios, razaoSocial, telefones, cnaeCode, cnaeDesc := searchDuckDuckGo(ctx, cnpj.Number, "cnpj")
 
 	// Se não conseguiu muita coisa e tem razão social, busca por ela
 	if len(socios) == 0 && cnpj.RazaoSocial != "" {
-		sociosRS, razaoRS, telefonesRS := searchDuckDuckGo(ctx, cnpj.RazaoSocial, "razao-social")
+		sociosRS, razaoRS, telefonesRS, cnaeRS, cnaeDescRS := searchDuckDuckGo(ctx, cnpj.RazaoSocial, "razao-social")
 
 		// Merge resultados
 		socios = append(socios, sociosRS...)
@@ -41,6 +41,10 @@ func EnrichFromDuckDuckGo(ctx context.Context, cnpj *CNPJ) error {
 			razaoSocial = razaoRS
 		}
 		telefones = append(telefones, telefonesRS...)
+		if cnaeCode == "" && cnaeRS != "" {
+			cnaeCode = cnaeRS
+			cnaeDesc = cnaeDescRS
+		}
 	}
 
 	// Atualiza dados do CNPJ
@@ -81,6 +85,12 @@ func EnrichFromDuckDuckGo(ctx context.Context, cnpj *CNPJ) error {
 		}
 	}
 
+	if cnpj.CNAE == "" && cnaeCode != "" {
+		cnpj.CNAE = cnaeCode
+		cnpj.CNAEDesc = cnaeDesc
+		updated = true
+	}
+
 	if !updated {
 		return fmt.Errorf("nenhum dado novo encontrado no DuckDuckGo")
 	}
@@ -89,7 +99,7 @@ func EnrichFromDuckDuckGo(ctx context.Context, cnpj *CNPJ) error {
 }
 
 // searchDuckDuckGo faz busca no DuckDuckGo e extrai informações
-func searchDuckDuckGo(ctx context.Context, query string, searchType string) (socios []string, razaoSocial string, telefones []string) {
+func searchDuckDuckGo(ctx context.Context, query string, searchType string) (socios []string, razaoSocial string, telefones []string, cnaeCode string, cnaeDesc string) {
 	var searchQuery string
 
 	if searchType == "cnpj" {
@@ -135,6 +145,11 @@ func searchDuckDuckGo(ctx context.Context, query string, searchType string) (soc
 			if rs := extractRazaoSocial(text); rs != "" {
 				razaoSocial = rs
 			}
+		}
+
+		// Busca CNAE se ainda não temos
+		if cnaeCode == "" {
+			cnaeCode, cnaeDesc = extractCNAEFromText(text)
 		}
 
 		// Busca sócios
@@ -335,6 +350,35 @@ func normalizeTelefone(tel string) string {
 	}
 }
 
+// extractCNAEFromText tenta extrair código CNAE e descrição de um snippet de texto
+func extractCNAEFromText(text string) (code, desc string) {
+	// Padrões: "CNAE: 4781-4/00 - Comércio varejista..."
+	//          "Atividade Principal: 47.81-4-00 Comércio..."
+	patterns := []string{
+		`(?i)cnae\s*:?\s*([\d]{4,7}[\d\.\/\-]*)[\s\-–]+([^\n\|]{5,80})`,
+		`(?i)atividade\s+principal\s*:?\s*([\d]{4,7}[\d\.\/\-]*)[\s\-–]+([^\n\|]{5,80})`,
+		`(?i)cnae\s*:?\s*([\d]{4,7}[\d\.\/\-]*)`,
+	}
+
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(pattern)
+		if m := re.FindStringSubmatch(text); len(m) >= 2 {
+			code = strings.TrimSpace(m[1])
+			if len(m) >= 3 {
+				desc = strings.TrimSpace(m[2])
+				// Remove trailing punctuation / noise
+				desc = regexp.MustCompile(`[\.\,\;\|]+$`).ReplaceAllString(desc, "")
+				desc = strings.TrimSpace(desc)
+			}
+			if code != "" {
+				return
+			}
+		}
+	}
+
+	return
+}
+
 // removeDuplicates remove strings duplicadas mantendo ordem
 func removeDuplicates(slice []string) []string {
 	seen := make(map[string]bool)
@@ -400,10 +444,15 @@ func EnrichFromBing(ctx context.Context, cnpj *CNPJ) error {
 	updated := false
 	var socios []string
 	var telefones []string
+	var cnaeCode, cnaeDesc string
 
 	// Extrai de snippets
 	doc.Find(".b_caption, .b_snippet").Each(func(i int, s *goquery.Selection) {
 		text := s.Text()
+
+		if cnaeCode == "" {
+			cnaeCode, cnaeDesc = extractCNAEFromText(text)
+		}
 
 		foundSocios := extractSocios(text)
 		socios = append(socios, foundSocios...)
@@ -440,6 +489,12 @@ func EnrichFromBing(ctx context.Context, cnpj *CNPJ) error {
 				updated = true
 			}
 		}
+	}
+
+	if cnpj.CNAE == "" && cnaeCode != "" {
+		cnpj.CNAE = cnaeCode
+		cnpj.CNAEDesc = cnaeDesc
+		updated = true
 	}
 
 	if !updated {
@@ -498,10 +553,15 @@ func EnrichFromBrave(ctx context.Context, cnpj *CNPJ) error {
 	updated := false
 	var socios []string
 	var telefones []string
+	var cnaeCode, cnaeDesc string
 
 	// Brave usa classes específicas para snippets
 	doc.Find(".snippet, .snippet-description, .snippet-content").Each(func(i int, s *goquery.Selection) {
 		text := s.Text()
+
+		if cnaeCode == "" {
+			cnaeCode, cnaeDesc = extractCNAEFromText(text)
+		}
 
 		foundSocios := extractSocios(text)
 		socios = append(socios, foundSocios...)
@@ -514,6 +574,10 @@ func EnrichFromBrave(ctx context.Context, cnpj *CNPJ) error {
 	if len(socios) == 0 && len(telefones) == 0 {
 		doc.Find(".result, .search-result").Each(func(i int, s *goquery.Selection) {
 			text := s.Text()
+
+			if cnaeCode == "" {
+				cnaeCode, cnaeDesc = extractCNAEFromText(text)
+			}
 
 			foundSocios := extractSocios(text)
 			socios = append(socios, foundSocios...)
@@ -551,6 +615,12 @@ func EnrichFromBrave(ctx context.Context, cnpj *CNPJ) error {
 				updated = true
 			}
 		}
+	}
+
+	if cnpj.CNAE == "" && cnaeCode != "" {
+		cnpj.CNAE = cnaeCode
+		cnpj.CNAEDesc = cnaeDesc
+		updated = true
 	}
 
 	if !updated {
@@ -609,10 +679,15 @@ func EnrichFromYandex(ctx context.Context, cnpj *CNPJ) error {
 	updated := false
 	var socios []string
 	var telefones []string
+	var cnaeCode, cnaeDesc string
 
 	// Yandex usa classes específicas para snippets
 	doc.Find(".Organic-Text, .OrganicText, .ExtendedText").Each(func(i int, s *goquery.Selection) {
 		text := s.Text()
+
+		if cnaeCode == "" {
+			cnaeCode, cnaeDesc = extractCNAEFromText(text)
+		}
 
 		foundSocios := extractSocios(text)
 		socios = append(socios, foundSocios...)
@@ -625,6 +700,10 @@ func EnrichFromYandex(ctx context.Context, cnpj *CNPJ) error {
 	if len(socios) == 0 && len(telefones) == 0 {
 		doc.Find(".Organic, .serp-item").Each(func(i int, s *goquery.Selection) {
 			text := s.Text()
+
+			if cnaeCode == "" {
+				cnaeCode, cnaeDesc = extractCNAEFromText(text)
+			}
 
 			foundSocios := extractSocios(text)
 			socios = append(socios, foundSocios...)
@@ -662,6 +741,12 @@ func EnrichFromYandex(ctx context.Context, cnpj *CNPJ) error {
 				updated = true
 			}
 		}
+	}
+
+	if cnpj.CNAE == "" && cnaeCode != "" {
+		cnpj.CNAE = cnaeCode
+		cnpj.CNAEDesc = cnaeDesc
+		updated = true
 	}
 
 	if !updated {

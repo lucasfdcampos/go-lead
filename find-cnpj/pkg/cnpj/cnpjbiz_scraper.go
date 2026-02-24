@@ -74,7 +74,7 @@ func (c *CNPJBizScraper) Search(ctx context.Context, cnpjNumber string) (*CNPJ, 
 	socios := c.extractSocios(doc)
 	cnpjObj.Socios = socios
 
-	// Busca razão social e nome fantasia
+	// Busca razão social, nome fantasia e CNAE
 	doc.Find("table tr").Each(func(i int, s *goquery.Selection) {
 		label := strings.TrimSpace(s.Find("td:first-child").Text())
 		value := strings.TrimSpace(s.Find("td:last-child").Text())
@@ -84,6 +84,10 @@ func (c *CNPJBizScraper) Search(ctx context.Context, cnpjNumber string) (*CNPJ, 
 		}
 		if strings.Contains(label, "Nome Fantasia") {
 			cnpjObj.NomeFantasia = value
+		}
+		if strings.Contains(label, "CNAE") || strings.Contains(label, "Atividade Principal") {
+			// Valor pode ser no formato "4781-4/00 - Comércio varejista"
+			cnpjObj.CNAE, cnpjObj.CNAEDesc = parseCNAEField(value)
 		}
 	})
 
@@ -213,6 +217,36 @@ func EnrichCNPJFromCNPJBiz(ctx context.Context, cnpj *CNPJ) error {
 	if cnpj.NomeFantasia == "" && enriched.NomeFantasia != "" {
 		cnpj.NomeFantasia = enriched.NomeFantasia
 	}
+	if cnpj.CNAE == "" && enriched.CNAE != "" {
+		cnpj.CNAE = enriched.CNAE
+		cnpj.CNAEDesc = enriched.CNAEDesc
+	}
 
 	return nil
+}
+
+// parseCNAEField extrai código e descrição de um campo CNAE
+// Formatos suportados:
+// "4781-4/00 - Comércio varejista..."
+// "47.81-4-00 Comércio varejista..."
+// "4781400"
+func parseCNAEField(value string) (code, desc string) {
+	if value == "" {
+		return
+	}
+	// Tenta extrair código CNAE com hífen/barra: 4781-4/00 ou 47.81-4/00
+	re := regexp.MustCompile(`(\d[\d\.\/\-]+\d+)`)
+	if m := re.FindStringSubmatch(value); len(m) >= 2 {
+		code = m[1]
+		// Descrição vem após o código
+		for _, sep := range []string{" - ", " – ", " "} {
+			if idx := strings.Index(value, sep); idx != -1 && idx > len(code)-2 {
+				desc = strings.TrimSpace(value[idx+len(sep):])
+				break
+			}
+		}
+	} else {
+		desc = value
+	}
+	return
 }

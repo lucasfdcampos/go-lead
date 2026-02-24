@@ -76,7 +76,7 @@ func main() {
 	defer writer.Flush()
 
 	// Header do CSV
-	writer.Write([]string{"Nome", "CNPJ", "CNPJ_Formatado", "Razao_Social", "Nome_Fantasia", "Telefones", "Socios", "Fonte", "Tempo_ms", "Tentativas", "Status"})
+	writer.Write([]string{"Nome", "CNPJ", "CNPJ_Formatado", "Razao_Social", "Nome_Fantasia", "Telefones", "Socios", "CNAE", "CNAE_Desc", "Fonte", "Tempo_ms", "Tentativas", "Status"})
 	writer.Flush()
 
 	// Capturar Ctrl+C para salvar antes de sair
@@ -168,6 +168,8 @@ func main() {
 					result.CNPJ.NomeFantasia,
 					telefones,
 					socios,
+					result.CNPJ.CNAE,
+					result.CNPJ.CNAEDesc,
 					result.Source,
 					fmt.Sprintf("%.0f", queryDuration.Milliseconds()),
 					fmt.Sprintf("%d", attempts),

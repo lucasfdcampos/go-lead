@@ -133,6 +133,17 @@ func (s *SerasaExperianScraper) Search(ctx context.Context, cnpjNumber string) (
 		}
 	})
 
+	// Busca CNAE em elementos de texto genérico
+	doc.Find("*").Each(func(i int, sel *goquery.Selection) {
+		text := strings.TrimSpace(sel.Text())
+		ltext := strings.ToLower(text)
+		if strings.Contains(ltext, "cnae") || strings.Contains(ltext, "atividade principal") {
+			if cnpjObj.CNAE == "" {
+				cnpjObj.CNAE, cnpjObj.CNAEDesc = parseCNAEField(text)
+			}
+		}
+	})
+
 	// Se não encontrou nada relevante
 	if cnpjObj.RazaoSocial == "" && len(cnpjObj.Telefones) == 0 && len(cnpjObj.Socios) == 0 {
 		return nil, fmt.Errorf("nenhum dado encontrado no Serasa Experian")
@@ -187,6 +198,10 @@ func EnrichFromSerasaExperian(ctx context.Context, cnpj *CNPJ) error {
 	}
 	if len(cnpj.Socios) == 0 && len(enriched.Socios) > 0 {
 		cnpj.Socios = enriched.Socios
+	}
+	if cnpj.CNAE == "" && enriched.CNAE != "" {
+		cnpj.CNAE = enriched.CNAE
+		cnpj.CNAEDesc = enriched.CNAEDesc
 	}
 
 	return nil

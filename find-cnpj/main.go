@@ -81,6 +81,14 @@ func main() {
 				fmt.Printf("   %d. %s\n", i+1, socio)
 			}
 		}
+
+		if result.CNPJ.CNAE != "" {
+			fmt.Printf("\n🏭 CNAE: %s", result.CNPJ.CNAE)
+			if result.CNPJ.CNAEDesc != "" {
+				fmt.Printf(" - %s", result.CNPJ.CNAEDesc)
+			}
+			fmt.Println()
+		}
 	}
 
 	fmt.Printf("\n⏱️  Tempo total: %v\n", result.Duration)

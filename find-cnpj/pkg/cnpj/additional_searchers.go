@@ -2,6 +2,7 @@ package cnpj
 
 import (
 "context"
+"encoding/json"
 "fmt"
 "io"
 "net/http"
@@ -51,16 +52,64 @@ if resp.StatusCode != http.StatusOK {
 return nil, fmt.Errorf("API retornou status %d", resp.StatusCode)
 }
 
-body, _ := io.ReadAll(resp.Body)
-if cnpj := ExtractCNPJ(string(body)); cnpj != nil {
-return cnpj, nil
+	var result struct {
+		CNPJ         string `json:"cnpj"`
+		Nome         string `json:"nome"`
+		Fantasia     string `json:"fantasia"`
+		Telefone     string `json:"telefone"`
+		AtividadePrincipal []struct {
+			Code string `json:"code"`
+			Text string `json:"text"`
+		} `json:"atividade_principal"`
+		QSA []struct {
+			Nome string `json:"nome"`
+		} `json:"qsa"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		// Fallback: tenta extrair CNPJ do texto bruto se JSON falhar
+		body, _ := io.ReadAll(resp.Body)
+		if cnpj := ExtractCNPJ(string(body)); cnpj != nil {
+			return cnpj, nil
+		}
+		return nil, fmt.Errorf("erro ao decodificar resposta: %w", err)
+	}
+
+	cnpjObj := ExtractCNPJ(result.CNPJ)
+	if cnpjObj == nil {
+		return nil, fmt.Errorf("CNPJ inválido")
+	}
+
+	// Enriquece com dados da ReceitaWS
+	if result.Nome != "" {
+		cnpjObj.RazaoSocial = result.Nome
+	}
+	if result.Fantasia != "" {
+		cnpjObj.NomeFantasia = result.Fantasia
+	}
+	if result.Telefone != "" {
+		cnpjObj.Telefones = append(cnpjObj.Telefones, result.Telefone)
+	}
+
+	// Adiciona CNAE principal
+	if len(result.AtividadePrincipal) > 0 {
+		cnpjObj.CNAE = result.AtividadePrincipal[0].Code
+		cnpjObj.CNAEDesc = result.AtividadePrincipal[0].Text
+	}
+
+	// Adiciona sócios
+	for _, qsa := range result.QSA {
+		if qsa.Nome != "" {
+			cnpjObj.Socios = append(cnpjObj.Socios, qsa.Nome)
+		}
+	}
+
+	return cnpjObj, nil
 }
 
-return nil, fmt.Errorf("CNPJ não encontrado")
-}
-
+// SimpleHTTPSearcher realiza buscas genéricas via HTTP
 type SimpleHTTPSearcher struct {
-BaseURL string
+	BaseURL string
 }
 
 func NewSimpleHTTPSearcher(baseURL string) *SimpleHTTPSearcher {
@@ -227,6 +276,9 @@ cnpj.Telefones = enriched.Telefones
 if len(cnpj.Socios) == 0 && len(enriched.Socios) > 0 {
 cnpj.Socios = enriched.Socios
 }
-
-return nil
+	if cnpj.CNAE == "" && enriched.CNAE != "" {
+		cnpj.CNAE = enriched.CNAE
+		cnpj.CNAEDesc = enriched.CNAEDesc
+	}
+	return nil
 }

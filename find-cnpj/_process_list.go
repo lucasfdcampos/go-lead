@@ -69,7 +69,7 @@ func main() {
 	defer writer.Flush()
 
 	// Header do CSV
-	writer.Write([]string{"Nome", "CNPJ", "CNPJ_Formatado", "Razao_Social", "Nome_Fantasia", "Telefones", "Socios", "Fonte", "Tempo_ms", "Status"})
+	writer.Write([]string{"Nome", "CNPJ", "CNPJ_Formatado", "Razao_Social", "Nome_Fantasia", "Telefones", "Socios", "CNAE", "CNAE_Desc", "Fonte", "Tempo_ms", "Status"})
 
 	// Processar lista
 	successCount := 0
@@ -132,6 +132,8 @@ func main() {
 				result.CNPJ.NomeFantasia,
 				telefones,
 				socios,
+				result.CNPJ.CNAE,
+				result.CNPJ.CNAEDesc,
 				result.Source,
 				fmt.Sprintf("%.0f", queryDuration.Milliseconds()),
 				"sucesso",
@@ -141,6 +143,8 @@ func main() {
 			fmt.Printf("❌ Não encontrado (%.2fs)\n", queryDuration.Seconds())
 			writer.Write([]string{
 				empresa,
+				"",
+				"",
 				"",
 				"",
 				"",
