@@ -69,7 +69,7 @@ func main() {
 	defer writer.Flush()
 
 	// Header do CSV
-	writer.Write([]string{"Nome", "CNPJ", "CNPJ_Formatado", "Fonte", "Tempo_ms", "Status"})
+	writer.Write([]string{"Nome", "CNPJ", "CNPJ_Formatado", "Razao_Social", "Nome_Fantasia", "Telefones", "Socios", "Fonte", "Tempo_ms", "Status"})
 
 	// Processar lista
 	successCount := 0
@@ -91,11 +91,47 @@ func main() {
 		cancel()
 
 		if result.Error == nil && result.CNPJ != nil {
-			fmt.Printf("✅ %s (%s, %.2fs)\n", result.CNPJ.Formatted, result.Source, queryDuration.Seconds())
+			// Enriquecer com dados adicionais (sócios e telefones)
+			enrichCtx, enrichCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			enrichErr := cnpj.EnrichCNPJData(enrichCtx, result.CNPJ)
+			enrichCancel()
+			
+			enrichStatus := ""
+			if enrichErr != nil {
+				enrichStatus = fmt.Sprintf(" [dados adicionais não disponíveis]")
+			}
+			
+			fmt.Printf("✅ %s (%s, %.2fs)%s\n", result.CNPJ.Formatted, result.Source, queryDuration.Seconds(), enrichStatus)
+			
+			// Formatar telefones e sócios para CSV (separados por ;)
+			telefones := ""
+			if len(result.CNPJ.Telefones) > 0 {
+				for i, tel := range result.CNPJ.Telefones {
+					if i > 0 {
+						telefones += "; "
+					}
+					telefones += tel
+				}
+			}
+			
+			socios := ""
+			if len(result.CNPJ.Socios) > 0 {
+				for i, socio := range result.CNPJ.Socios {
+					if i > 0 {
+						socios += "; "
+					}
+					socios += socio
+				}
+			}
+			
 			writer.Write([]string{
 				empresa,
 				result.CNPJ.Number,
 				result.CNPJ.Formatted,
+				result.CNPJ.RazaoSocial,
+				result.CNPJ.NomeFantasia,
+				telefones,
+				socios,
 				result.Source,
 				fmt.Sprintf("%.0f", queryDuration.Milliseconds()),
 				"sucesso",
@@ -105,6 +141,10 @@ func main() {
 			fmt.Printf("❌ Não encontrado (%.2fs)\n", queryDuration.Seconds())
 			writer.Write([]string{
 				empresa,
+				"",
+				"",
+				"",
+				"",
 				"",
 				"",
 				"",

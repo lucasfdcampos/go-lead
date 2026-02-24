@@ -5,10 +5,14 @@ import (
 "strings"
 )
 
-// CNPJ representa um CNPJ validado
+// CNPJ representa um CNPJ validado com informações adicionais
 type CNPJ struct {
-Number    string // Apenas números
-Formatted string // Com formatação XX.XXX.XXX/XXXX-XX
+	Number       string   // Apenas números
+	Formatted    string   // Com formatação XX.XXX.XXX/XXXX-XX
+	RazaoSocial  string   // Razão Social da empresa
+	NomeFantasia string   // Nome Fantasia
+	Socios       []string // Lista de sócios
+	Telefones    []string // Lista de telefones
 }
 
 // ExtractCNPJ extrai e valida um CNPJ de um texto

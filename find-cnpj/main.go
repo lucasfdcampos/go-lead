@@ -54,7 +54,36 @@ func main() {
 	fmt.Printf("📊 Fonte: %s\n", result.Source)
 	fmt.Printf("🔢 CNPJ: %s\n", result.CNPJ.Formatted)
 	fmt.Printf("📝 Apenas números: %s\n", result.CNPJ.Number)
-	fmt.Printf("⏱️  Tempo de busca: %v\n", result.Duration)
+	
+	// Busca dados adicionais (sócios e telefones)
+	fmt.Printf("\n🔍 Buscando dados adicionais...\n")
+	if err := cnpj.EnrichCNPJData(ctx, result.CNPJ); err != nil {
+		fmt.Printf("⚠️  Aviso: não foi possível obter dados adicionais: %v\n", err)
+	} else {
+		// Exibe dados adicionais se disponíveis
+		if result.CNPJ.RazaoSocial != "" {
+			fmt.Printf("\n🏢 Razão Social: %s\n", result.CNPJ.RazaoSocial)
+		}
+		if result.CNPJ.NomeFantasia != "" {
+			fmt.Printf("🏪 Nome Fantasia: %s\n", result.CNPJ.NomeFantasia)
+		}
+		
+		if len(result.CNPJ.Telefones) > 0 {
+			fmt.Printf("\n📞 Telefones:\n")
+			for _, tel := range result.CNPJ.Telefones {
+				fmt.Printf("   • %s\n", tel)
+			}
+		}
+		
+		if len(result.CNPJ.Socios) > 0 {
+			fmt.Printf("\n👥 Sócios (%d):\n", len(result.CNPJ.Socios))
+			for i, socio := range result.CNPJ.Socios {
+				fmt.Printf("   %d. %s\n", i+1, socio)
+			}
+		}
+	}
+	
+	fmt.Printf("\n⏱️  Tempo total: %v\n", result.Duration)
 	fmt.Println("═══════════════════════════════════════════════")
 }
 

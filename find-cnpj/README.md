@@ -1,12 +1,14 @@
 # 🔍 Go Lead - Busca Inteligente de CNPJ
 
-Sistema robusto de busca de CNPJ com múltiplas estratégias e fallback automático.
+Sistema robusto de busca de CNPJ com múltiplas estratégias, fallback automático e enriquecimento de dados.
 
 ## 🎯 Funcionalidades
 
 - ✅ Busca CNPJ a partir de queries textuais (ex: "dimazzo arapongas cnpj")
 - ✅ Múltiplas estratégias com fallback automático
 - ✅ Validação completa de CNPJ (dígitos verificadores)
+- ✅ **Enriquecimento de dados: Sócios, Telefones, Razão Social e Nome Fantasia**
+- ✅ **Fallback duplo: BrasilAPI → cnpj.biz**
 - ✅ Extração de CNPJ de textos
 - ✅ 6 estratégias diferentes implementadas
 - ✅ 100% funcional sem custos (opções gratuitas)
@@ -14,11 +16,18 @@ Sistema robusto de busca de CNPJ com múltiplas estratégias e fallback automát
 ## 🚀 Uso Rápido
 
 ```bash
-# Busca simples
+# Busca simples (com dados adicionais)
 go run main.go dimazzo arapongas cnpj
 
-# Ou qualquer outra empresa
-go run main.go "nome da empresa cnpj"
+# Saída:
+# ✅ CNPJ ENCONTRADO!
+# 🔢 CNPJ: 04.309.163/0001-01
+# 🏢 Razão Social: DI-MAZZO ARTIGOS DO VESTUARIO LTDA
+# 🏪 Nome Fantasia: DI MAZZO
+# 📞 Telefones: (43) 3252-1234
+# 👥 Sócios (2):
+#    1. NATHAN COSTA E SILVA
+#    2. REGINA NUNES COSTA
 ```
 
 ## 📊 Estratégias Disponíveis
@@ -65,6 +74,53 @@ go run process_list.go empresas.txt
 2. **Sites de Consulta CNPJ** - Gratuito, backup confiável
 3. ~~**Google Custom Search API**~~ - **REMOVIDO** (era pago)
 4. **ChromeDP Scraping** - Gratuito, robusto, mais lento
+
+---
+
+## 🔎 Enriquecimento de Dados
+
+Após encontrar um CNPJ, o sistema busca **automaticamente** dados adicionais:
+
+### 📋 Dados Disponíveis:
+- 🏢 **Razão Social**: Nome oficial da empresa
+- 🏪 **Nome Fantasia**: Nome comercial
+- 📞 **Telefones**: Todos os telefones cadastrados
+- 👥 **Sócios**: Lista completa de sócios/administradores
+
+### 🔄 Sistema de Fallback:
+1. **BrasilAPI** (Primário) - API oficial, gratuita, rápida
+2. **cnpj.biz** (Fallback) - Scraping quando BrasilAPI falhar
+
+```bash
+# Exemplo de saída completa:
+✅ CNPJ ENCONTRADO!
+🔢 CNPJ: 04.309.163/0001-01
+🏢 Razão Social: DI-MAZZO ARTIGOS DO VESTUARIO LTDA
+🏪 Nome Fantasia: DI MAZZO
+👥 Sócios (2):
+   1. NATHAN COSTA E SILVA
+   2. REGINA NUNES COSTA
+```
+
+### 📄 Processamento em Lote
+O CSV gerado inclui **todas as informações**:
+```csv
+Nome,CNPJ,CNPJ_Formatado,Razao_Social,Nome_Fantasia,Telefones,Socios,Fonte,Tempo_ms,Status
+dimazzo arapongas,04309163000101,04.309.163/0001-01,DI-MAZZO ARTIGOS...,DI MAZZO,(43) 3252-1234,NATHAN COSTA E SILVA; REGINA NUNES COSTA,DuckDuckGo,807,sucesso
+```
+
+### 🧪 Testar Enriquecimento
+```bash
+# Teste completo de enriquecimento
+go run test_enrichment.go
+
+# Testa:
+# - BrasilAPI
+# - cnpj.biz (fallback)
+# - Função automática EnrichCNPJData()
+```
+
+---
 
 ## 📦 Instalação
 

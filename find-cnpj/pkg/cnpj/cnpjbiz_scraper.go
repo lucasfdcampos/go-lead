@@ -1,0 +1,218 @@
+package cnpj
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/PuerkitoBio/goquery"
+)
+
+// CNPJBizScraper busca dados no cnpj.biz
+type CNPJBizScraper struct{}
+
+func NewCNPJBizScraper() *CNPJBizScraper {
+	return &CNPJBizScraper{}
+}
+
+func (c *CNPJBizScraper) Name() string {
+	return "CNPJ.biz Scraper"
+}
+
+func (c *CNPJBizScraper) Search(ctx context.Context, cnpjNumber string) (*CNPJ, error) {
+	if cnpjNumber == "" {
+		return nil, fmt.Errorf("CNPJ não fornecido")
+	}
+
+	// Remove formatação
+	cnpjClean := regexp.MustCompile(`\D`).ReplaceAllString(cnpjNumber, "")
+	if len(cnpjClean) != 14 {
+		return nil, fmt.Errorf("CNPJ inválido")
+	}
+
+	url := fmt.Sprintf("https://cnpj.biz/%s", cnpjClean)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
+	// Delay para respeitar rate limit
+	time.Sleep(1 * time.Second)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("status code: %d", resp.StatusCode)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	cnpjObj := &CNPJ{
+		Number:    cnpjClean,
+		Formatted: formatCNPJ(cnpjClean),
+	}
+
+	// Busca telefones
+	telefones := c.extractTelefones(doc)
+	cnpjObj.Telefones = telefones
+
+	// Busca sócios no quadro societário
+	socios := c.extractSocios(doc)
+	cnpjObj.Socios = socios
+
+	// Busca razão social e nome fantasia
+	doc.Find("table tr").Each(func(i int, s *goquery.Selection) {
+		label := strings.TrimSpace(s.Find("td:first-child").Text())
+		value := strings.TrimSpace(s.Find("td:last-child").Text())
+
+		if strings.Contains(label, "Razão Social") || strings.Contains(label, "Nome Empresarial") {
+			cnpjObj.RazaoSocial = value
+		}
+		if strings.Contains(label, "Nome Fantasia") {
+			cnpjObj.NomeFantasia = value
+		}
+	})
+
+	if len(cnpjObj.Telefones) == 0 && len(cnpjObj.Socios) == 0 {
+		return nil, fmt.Errorf("nenhum dado adicional encontrado")
+	}
+
+	return cnpjObj, nil
+}
+
+func (c *CNPJBizScraper) extractTelefones(doc *goquery.Document) []string {
+	var telefones []string
+	seen := make(map[string]bool)
+
+	// Busca por telefones no HTML
+	doc.Find("*").Each(func(i int, s *goquery.Selection) {
+		text := s.Text()
+		
+		// Regex para telefones brasileiros
+		phoneRegex := regexp.MustCompile(`\(?(\d{2})\)?[\s\-]?(\d{4,5})[\s\-]?(\d{4})`)
+		matches := phoneRegex.FindAllStringSubmatch(text, -1)
+
+		for _, match := range matches {
+			if len(match) >= 4 {
+				telefone := fmt.Sprintf("(%s) %s-%s", match[1], match[2], match[3])
+				if !seen[telefone] {
+					telefones = append(telefones, telefone)
+					seen[telefone] = true
+				}
+			}
+		}
+	})
+
+	// Busca específica em tabelas
+	doc.Find("table tr").Each(func(i int, s *goquery.Selection) {
+		label := strings.ToLower(strings.TrimSpace(s.Find("td:first-child").Text()))
+		value := strings.TrimSpace(s.Find("td:last-child").Text())
+
+		if strings.Contains(label, "telefone") || strings.Contains(label, "fone") {
+			if value != "" && !seen[value] {
+				// Adiciona se ainda não estiver na lista
+				phoneRegex := regexp.MustCompile(`\d`)
+				if phoneRegex.MatchString(value) {
+					telefones = append(telefones, value)
+					seen[value] = true
+				}
+			}
+		}
+	})
+
+	return telefones
+}
+
+func (c *CNPJBizScraper) extractSocios(doc *goquery.Document) []string {
+	var socios []string
+	seen := make(map[string]bool)
+
+	// Busca por quadro societário
+	doc.Find("table").Each(func(i int, table *goquery.Selection) {
+		// Verifica se é a tabela de sócios
+		headerText := strings.ToLower(table.Find("th").Text())
+		if strings.Contains(headerText, "sóci") || strings.Contains(headerText, "quadro") {
+			table.Find("tr").Each(func(j int, row *goquery.Selection) {
+				// Pula header
+				if j == 0 {
+					return
+				}
+
+				nome := strings.TrimSpace(row.Find("td").First().Text())
+				if nome != "" && !seen[nome] {
+					// Limpa nome
+					nome = strings.TrimSpace(regexp.MustCompile(`\s+`).ReplaceAllString(nome, " "))
+					if len(nome) > 3 { // Nome deve ter pelo menos 3 caracteres
+						socios = append(socios, nome)
+						seen[nome] = true
+					}
+				}
+			})
+		}
+	})
+
+	// Busca alternativa em divs ou sections
+	if len(socios) == 0 {
+		doc.Find("*").Each(func(i int, s *goquery.Selection) {
+			text := strings.ToLower(s.Text())
+			if strings.Contains(text, "quadro de sócios") || strings.Contains(text, "qsa") {
+				// Busca próximos elementos que podem conter nomes
+				s.NextAll().Each(func(j int, next *goquery.Selection) {
+					nome := strings.TrimSpace(next.Text())
+					if nome != "" && !seen[nome] && len(nome) > 3 && len(nome) < 100 {
+						// Verifica se parece um nome (tem letras)
+						if regexp.MustCompile(`[A-Za-z]{3,}`).MatchString(nome) {
+							socios = append(socios, nome)
+							seen[nome] = true
+						}
+					}
+				})
+			}
+		})
+	}
+
+	return socios
+}
+
+// EnrichCNPJFromCNPJBiz tenta enriquecer dados de um CNPJ usando cnpj.biz
+func EnrichCNPJFromCNPJBiz(ctx context.Context, cnpj *CNPJ) error {
+	if cnpj == nil || cnpj.Number == "" {
+		return fmt.Errorf("CNPJ inválido")
+	}
+
+	scraper := NewCNPJBizScraper()
+	enriched, err := scraper.Search(ctx, cnpj.Number)
+	if err != nil {
+		return err
+	}
+
+	// Atualiza apenas se não tiver dados
+	if len(cnpj.Telefones) == 0 && len(enriched.Telefones) > 0 {
+		cnpj.Telefones = enriched.Telefones
+	}
+	if len(cnpj.Socios) == 0 && len(enriched.Socios) > 0 {
+		cnpj.Socios = enriched.Socios
+	}
+	if cnpj.RazaoSocial == "" && enriched.RazaoSocial != "" {
+		cnpj.RazaoSocial = enriched.RazaoSocial
+	}
+	if cnpj.NomeFantasia == "" && enriched.NomeFantasia != "" {
+		cnpj.NomeFantasia = enriched.NomeFantasia
+	}
+
+	return nil
+}
