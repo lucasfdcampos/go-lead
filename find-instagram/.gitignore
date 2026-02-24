@@ -1,0 +1,34 @@
+# Binários compilados
+find-instagram
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Arquivos de teste
+*.test
+*.out
+
+# Arquivos temporários
+*.swp
+*.swo
+*~
+
+# Resultados de processamento
+resultados_instagram.csv
+*.csv
+
+# Arquivos de ambiente
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

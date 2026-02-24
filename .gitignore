@@ -1,0 +1,47 @@
+# Binários
+find-cnpj/go-lead
+find-cnpj/process-list
+find-cnpj/process-list-safe
+find-cnpj/test_rate_limit
+find-instagram/find-instagram
+
+# Go
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Resultados
+*.csv
+resultados_*.csv
+
+# Ambiente
+.env
+.env.*
+!.env.example
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporários
+tmp/
+temp/
+test_companies_*.txt
+empresas_teste.txt
+
+# Go workspace
+go.work.sum

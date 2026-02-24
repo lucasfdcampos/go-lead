@@ -1,0 +1,37 @@
+# Binários compilados
+go-lead
+process-list
+process-list-safe
+test_rate_limit
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Arquivos de teste
+*.test
+*.out
+
+# Arquivos temporários
+*.swp
+*.swo
+*~
+
+# Resultados de processamento
+resultados_cnpj.csv
+*.csv
+
+# Arquivos de ambiente
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
