@@ -89,13 +89,18 @@ func (b *BrasilAPISearcher) Search(ctx context.Context, query string) (*CNPJ, er
 }
 
 // EnrichCNPJData busca dados adicionais de um CNPJ já encontrado
-// Primeiro tenta BrasilAPI, se falhar usa cnpj.biz como fallback
+// Sistema de fallback em cascata: BrasilAPI → ReceitaWS → cnpj.biz → Serasa Experian
 func EnrichCNPJData(ctx context.Context, cnpj *CNPJ) error {
 	if cnpj == nil || cnpj.Number == "" {
 		return fmt.Errorf("CNPJ inválido")
 	}
 
-	// Tenta primeiro BrasilAPI
+	// Helper para verificar se dados estão completos
+	isComplete := func() bool {
+		return cnpj.RazaoSocial != "" && len(cnpj.Socios) > 0
+	}
+
+	// 1. Tenta BrasilAPI primeiro (oficial e rápida)
 	searcher := NewBrasilAPISearcher(cnpj.Number)
 	enriched, err := searcher.Search(ctx, "")
 	if err == nil {
@@ -112,13 +117,56 @@ func EnrichCNPJData(ctx context.Context, cnpj *CNPJ) error {
 		if len(enriched.Socios) > 0 {
 			cnpj.Socios = enriched.Socios
 		}
-		return nil
+		
+		// Se já temos dados completos, retorna
+		if isComplete() {
+			return nil
+		}
 	}
 
-	// Se BrasilAPI falhar, tenta cnpj.biz como fallback
-	fmt.Printf("⚠️  BrasilAPI falhou (%v), tentando cnpj.biz...\n", err)
-	if err := EnrichCNPJFromCNPJBiz(ctx, cnpj); err != nil {
-		return fmt.Errorf("falhou BrasilAPI e cnpj.biz: %w", err)
+	// 2. Se BrasilAPI falhou ou dados incompletos, tenta ReceitaWS
+	if err != nil || !isComplete() {
+		if err != nil {
+			fmt.Printf("⚠️  BrasilAPI falhou (%v), tentando ReceitaWS...\n", err)
+		} else {
+			fmt.Printf("⚠️  BrasilAPI com dados incompletos, tentando ReceitaWS...\n")
+		}
+		
+		errReceitaWS := EnrichFromReceitaWS(ctx, cnpj)
+		if errReceitaWS == nil && isComplete() {
+			return nil
+		}
+		
+		if errReceitaWS != nil {
+			fmt.Printf("⚠️  ReceitaWS falhou (%v), tentando cnpj.biz...\n", errReceitaWS)
+		}
+	}
+
+	// 3. Tenta cnpj.biz (scraping)
+	if !isComplete() {
+		errCnpjBiz := EnrichCNPJFromCNPJBiz(ctx, cnpj)
+		if errCnpjBiz == nil && isComplete() {
+			return nil
+		}
+		
+		if errCnpjBiz != nil {
+			fmt.Printf("⚠️  cnpj.biz falhou (%v), tentando Serasa Experian...\n", errCnpjBiz)
+		}
+	}
+
+	// 4. Última tentativa: Serasa Experian (scraping complexo)
+	if !isComplete() {
+		errSerasa := EnrichFromSerasaExperian(ctx, cnpj)
+		if errSerasa == nil && isComplete() {
+			return nil
+		}
+		
+		// Se nenhum funcionou completamente mas tem algo
+		if cnpj.RazaoSocial != "" || len(cnpj.Socios) > 0 || len(cnpj.Telefones) > 0 {
+			return nil // Retorna sucesso parcial
+		}
+		
+		return fmt.Errorf("todas as fontes falharam")
 	}
 
 	return nil

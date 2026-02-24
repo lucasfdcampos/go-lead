@@ -201,3 +201,32 @@ return cnpj, nil
 
 return nil, fmt.Errorf("CNPJ não encontrado no DuckDuckGo")
 }
+
+// EnrichFromReceitaWS tenta enriquecer dados usando ReceitaWS
+func EnrichFromReceitaWS(ctx context.Context, cnpj *CNPJ) error {
+if cnpj == nil || cnpj.Number == "" {
+return fmt.Errorf("CNPJ inválido")
+}
+
+searcher := NewReceitaWSSearcher(cnpj.Number)
+enriched, err := searcher.Search(ctx, "")
+if err != nil {
+return err
+}
+
+// Atualiza apenas campos vazios
+if cnpj.RazaoSocial == "" && enriched.RazaoSocial != "" {
+cnpj.RazaoSocial = enriched.RazaoSocial
+}
+if cnpj.NomeFantasia == "" && enriched.NomeFantasia != "" {
+cnpj.NomeFantasia = enriched.NomeFantasia
+}
+if len(cnpj.Telefones) == 0 && len(enriched.Telefones) > 0 {
+cnpj.Telefones = enriched.Telefones
+}
+if len(cnpj.Socios) == 0 && len(enriched.Socios) > 0 {
+cnpj.Socios = enriched.Socios
+}
+
+return nil
+}
