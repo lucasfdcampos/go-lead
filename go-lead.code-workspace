@@ -1,0 +1,32 @@
+{
+  "folders": [
+    {
+      "name": "🚀 go-lead (raiz)",
+      "path": "."
+    },
+    {
+      "name": "🔍 find-cnpj",
+      "path": "find-cnpj"
+    },
+    {
+      "name": "📱 find-instagram",
+      "path": "find-instagram"
+    }
+  ],
+  "settings": {
+    "go.gopath": "",
+    "go.goroot": "",
+    "go.toolsManagement.autoUpdate": true,
+    "files.exclude": {
+      "**/.git": true,
+      "**/.DS_Store": true,
+      "**/node_modules": true
+    },
+    "gopls": {
+      "build.directoryFilters": [
+        "-**/node_modules"
+      ],
+      "experimentalWorkspaceModule": true
+    }
+  }
+}
