@@ -53,7 +53,7 @@ func (i *InstaStoriesViewerScraper) Search(ctx context.Context, query string) (*
 			return nil
 		},
 	}
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("erro na requisição: %w", err)
@@ -266,6 +266,17 @@ func extractFollowersFromText(text string) string {
 }
 
 // EnrichInstagramFollowers busca dados de seguidores para um Instagram já encontrado
+// Sistema de fallback em cascata com 10 fontes:
+// 1. InstaStoriesViewer (primária)
+// 2. StoryNavigation (fallback 1)
+// 3. Imginn (fallback 2)
+// 4. StoriesDown (fallback 3)
+// 5. Picuki (fallback 4)
+// 6. Greatfon (fallback 5)
+// 7. Instalk (fallback 6)
+// 8. DuckDuckGo Search (fallback 7)
+// 9. Bing Search (fallback 8)
+// 10. Instagram Direct (fallback 9)
 func EnrichInstagramFollowers(ctx context.Context, instagram *Instagram) error {
 	if instagram == nil || instagram.Handle == "" {
 		return fmt.Errorf("instagram inválido")
@@ -276,24 +287,44 @@ func EnrichInstagramFollowers(ctx context.Context, instagram *Instagram) error {
 		return nil
 	}
 
-	// Tenta insta-stories-viewer primeiro
-	scraper1 := NewInstaStoriesViewerScraper()
-	result1, err1 := scraper1.Search(ctx, instagram.Handle)
-	if err1 == nil && result1.Followers != "" {
-		instagram.Followers = result1.Followers
-		return nil
+	// Lista de scrapers em ordem de prioridade
+	scrapers := []struct {
+		name    string
+		scraper interface {
+			Search(context.Context, string) (*Instagram, error)
+			Name() string
+		}
+	}{
+		{"InstaStoriesViewer", NewInstaStoriesViewerScraper()},
+		{"StoryNavigation", NewStoryNavigationScraper()},
+		{"Imginn", NewImginnScraper()},
+		{"StoriesDown", NewStoriesDownScraper()},
+		{"Picuki", NewPicukiScraper()},
+		{"Greatfon", NewGreatfonScraper()},
+		{"Instalk", NewInstalkScraper()},
+		{"DuckDuckGo", NewDuckDuckGoFollowersScraper()},
+		{"Bing", NewBingSearchScraper()},
+		{"InstagramDirect", NewInstagramDirectScraper()},
 	}
 
-	// Fallback para storynavigation
-	fmt.Printf("⚠️  InstaStoriesViewer falhou (%v), tentando StoryNavigation...\n", err1)
-	scraper2 := NewStoryNavigationScraper()
-	result2, err2 := scraper2.Search(ctx, instagram.Handle)
-	if err2 == nil && result2.Followers != "" {
-		instagram.Followers = result2.Followers
-		return nil
+	var lastErr error
+	for i, s := range scrapers {
+		if i > 0 {
+			fmt.Printf("⚠️  %s falhou (%v), tentando %s...\n", scrapers[i-1].name, lastErr, s.name)
+		}
+
+		result, err := s.scraper.Search(ctx, instagram.Handle)
+		if err == nil && result.Followers != "" && result.Followers != "0" {
+			instagram.Followers = result.Followers
+			if i > 0 {
+				fmt.Printf("✅ Sucesso com fallback %s\n", s.name)
+			}
+			return nil
+		}
+		lastErr = err
 	}
 
-	return fmt.Errorf("falhou InstaStoriesViewer e StoryNavigation")
+	return fmt.Errorf("todas as 10 fontes falharam para %s", instagram.Handle)
 }
 
 func max(a, b int) int {
