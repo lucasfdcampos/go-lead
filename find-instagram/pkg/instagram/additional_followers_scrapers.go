@@ -291,7 +291,7 @@ func formatFollowerCount(count string) string {
 	// Remove não-dígitos
 	re := regexp.MustCompile(`\D`)
 	cleanCount := re.ReplaceAllString(count, "")
-	
+
 	if len(cleanCount) == 0 {
 		return count
 	}

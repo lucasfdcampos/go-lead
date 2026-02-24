@@ -89,7 +89,7 @@ func (b *BrasilAPISearcher) Search(ctx context.Context, query string) (*CNPJ, er
 }
 
 // EnrichCNPJData busca dados adicionais de um CNPJ já encontrado
-// Sistema de fallback em cascata: BrasilAPI → ReceitaWS → cnpj.biz → Serasa Experian → DuckDuckGo → Bing
+// Sistema de fallback em cascata: BrasilAPI → ReceitaWS → cnpj.biz → Serasa Experian → DuckDuckGo → Bing → Brave → Yandex
 func EnrichCNPJData(ctx context.Context, cnpj *CNPJ) error {
 	if cnpj == nil || cnpj.Number == "" {
 		return fmt.Errorf("CNPJ inválido")
@@ -179,11 +179,37 @@ func EnrichCNPJData(ctx context.Context, cnpj *CNPJ) error {
 		}
 	}
 
-	// 6. Fallback final: Bing Search
+	// 6. Fallback para Bing Search
 	if !isComplete() {
 		errBing := EnrichFromBing(ctx, cnpj)
 		if errBing == nil && isComplete() {
 			fmt.Printf("✅ Sucesso com fallback Bing\n")
+			return nil
+		}
+
+		if errBing != nil {
+			fmt.Printf("⚠️  Bing falhou (%v), tentando Brave Search...\n", errBing)
+		}
+	}
+
+	// 7. Fallback para Brave Search
+	if !isComplete() {
+		errBrave := EnrichFromBrave(ctx, cnpj)
+		if errBrave == nil && isComplete() {
+			fmt.Printf("✅ Sucesso com fallback Brave\n")
+			return nil
+		}
+
+		if errBrave != nil {
+			fmt.Printf("⚠️  Brave falhou (%v), tentando Yandex Search...\n", errBrave)
+		}
+	}
+
+	// 8. Fallback final: Yandex Search
+	if !isComplete() {
+		errYandex := EnrichFromYandex(ctx, cnpj)
+		if errYandex == nil && isComplete() {
+			fmt.Printf("✅ Sucesso com fallback Yandex\n")
 			return nil
 		}
 	}
@@ -193,7 +219,7 @@ func EnrichCNPJData(ctx context.Context, cnpj *CNPJ) error {
 		return nil // Retorna sucesso parcial
 	}
 
-	return fmt.Errorf("todas as 6 fontes falharam")
+	return fmt.Errorf("todas as 8 fontes falharam")
 }
 
 func ValidateCNPJ(ctx context.Context, cnpj string) (bool, error) {

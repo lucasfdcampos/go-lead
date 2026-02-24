@@ -266,7 +266,7 @@ func extractFollowersFromText(text string) string {
 }
 
 // EnrichInstagramFollowers busca dados de seguidores para um Instagram já encontrado
-// Sistema de fallback em cascata com 10 fontes:
+// Sistema de fallback em cascata com 12 fontes:
 // 1. InstaStoriesViewer (primária)
 // 2. StoryNavigation (fallback 1)
 // 3. Imginn (fallback 2)
@@ -276,7 +276,9 @@ func extractFollowersFromText(text string) string {
 // 7. Instalk (fallback 6)
 // 8. DuckDuckGo Search (fallback 7)
 // 9. Bing Search (fallback 8)
-// 10. Instagram Direct (fallback 9)
+// 10. Brave Search (fallback 9)
+// 11. Yandex Search (fallback 10)
+// 12. Instagram Direct (fallback 11)
 func EnrichInstagramFollowers(ctx context.Context, instagram *Instagram) error {
 	if instagram == nil || instagram.Handle == "" {
 		return fmt.Errorf("instagram inválido")
@@ -304,6 +306,8 @@ func EnrichInstagramFollowers(ctx context.Context, instagram *Instagram) error {
 		{"Instalk", NewInstalkScraper()},
 		{"DuckDuckGo", NewDuckDuckGoFollowersScraper()},
 		{"Bing", NewBingSearchScraper()},
+		{"Brave", NewBraveSearchFollowersScraper()},
+		{"Yandex", NewYandexSearchFollowersScraper()},
 		{"InstagramDirect", NewInstagramDirectScraper()},
 	}
 
@@ -324,7 +328,7 @@ func EnrichInstagramFollowers(ctx context.Context, instagram *Instagram) error {
 		lastErr = err
 	}
 
-	return fmt.Errorf("todas as 10 fontes falharam para %s", instagram.Handle)
+	return fmt.Errorf("todas as 12 fontes falharam para %s", instagram.Handle)
 }
 
 func max(a, b int) int {

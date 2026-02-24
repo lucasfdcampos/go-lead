@@ -34,7 +34,7 @@ func EnrichFromDuckDuckGo(ctx context.Context, cnpj *CNPJ) error {
 	// Se não conseguiu muita coisa e tem razão social, busca por ela
 	if len(socios) == 0 && cnpj.RazaoSocial != "" {
 		sociosRS, razaoRS, telefonesRS := searchDuckDuckGo(ctx, cnpj.RazaoSocial, "razao-social")
-		
+
 		// Merge resultados
 		socios = append(socios, sociosRS...)
 		if razaoSocial == "" && razaoRS != "" {
@@ -444,6 +444,228 @@ func EnrichFromBing(ctx context.Context, cnpj *CNPJ) error {
 
 	if !updated {
 		return fmt.Errorf("nenhum dado novo encontrado no Bing")
+	}
+
+	return nil
+}
+
+// BraveSearchScraper busca via Brave Search
+type BraveSearchScraper struct{}
+
+func NewBraveSearchScraper() *BraveSearchScraper {
+	return &BraveSearchScraper{}
+}
+
+func (b *BraveSearchScraper) Name() string {
+	return "Brave Search"
+}
+
+// EnrichFromBrave busca dados de sócios via Brave Search
+func EnrichFromBrave(ctx context.Context, cnpj *CNPJ) error {
+	if cnpj == nil || cnpj.Number == "" {
+		return fmt.Errorf("CNPJ inválido")
+	}
+
+	searchQuery := fmt.Sprintf("%s sócios administradores", cnpj.Number)
+	url := fmt.Sprintf("https://search.brave.com/search?q=%s", searchQuery)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("erro ao criar requisição: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+	req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9")
+
+	time.Sleep(1 * time.Second)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("erro na requisição: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("status code: %d", resp.StatusCode)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return fmt.Errorf("erro ao parsear HTML: %w", err)
+	}
+
+	updated := false
+	var socios []string
+	var telefones []string
+
+	// Brave usa classes específicas para snippets
+	doc.Find(".snippet, .snippet-description, .snippet-content").Each(func(i int, s *goquery.Selection) {
+		text := s.Text()
+
+		foundSocios := extractSocios(text)
+		socios = append(socios, foundSocios...)
+
+		foundTelefones := extractTelefonesFromText(text)
+		telefones = append(telefones, foundTelefones...)
+	})
+
+	// Fallback: busca em divs gerais de resultado
+	if len(socios) == 0 && len(telefones) == 0 {
+		doc.Find(".result, .search-result").Each(func(i int, s *goquery.Selection) {
+			text := s.Text()
+
+			foundSocios := extractSocios(text)
+			socios = append(socios, foundSocios...)
+
+			foundTelefones := extractTelefonesFromText(text)
+			telefones = append(telefones, foundTelefones...)
+		})
+	}
+
+	// Atualiza sócios
+	if len(socios) > 0 {
+		sociosMap := make(map[string]bool)
+		for _, s := range cnpj.Socios {
+			sociosMap[strings.ToLower(s)] = true
+		}
+
+		for _, s := range removeDuplicates(socios) {
+			if !sociosMap[strings.ToLower(s)] {
+				cnpj.Socios = append(cnpj.Socios, s)
+				updated = true
+			}
+		}
+	}
+
+	// Atualiza telefones
+	if len(telefones) > 0 {
+		telefonesMap := make(map[string]bool)
+		for _, t := range cnpj.Telefones {
+			telefonesMap[t] = true
+		}
+
+		for _, t := range removeDuplicates(telefones) {
+			if !telefonesMap[t] {
+				cnpj.Telefones = append(cnpj.Telefones, t)
+				updated = true
+			}
+		}
+	}
+
+	if !updated {
+		return fmt.Errorf("nenhum dado novo encontrado no Brave")
+	}
+
+	return nil
+}
+
+// YandexSearchScraper busca via Yandex
+type YandexSearchScraper struct{}
+
+func NewYandexSearchScraper() *YandexSearchScraper {
+	return &YandexSearchScraper{}
+}
+
+func (y *YandexSearchScraper) Name() string {
+	return "Yandex Search"
+}
+
+// EnrichFromYandex busca dados de sócios via Yandex
+func EnrichFromYandex(ctx context.Context, cnpj *CNPJ) error {
+	if cnpj == nil || cnpj.Number == "" {
+		return fmt.Errorf("CNPJ inválido")
+	}
+
+	searchQuery := fmt.Sprintf("%s sócios administradores Brasil", cnpj.Number)
+	url := fmt.Sprintf("https://yandex.com/search/?text=%s&lr=102", searchQuery) // lr=102 = Brasil
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("erro ao criar requisição: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
+
+	time.Sleep(1 * time.Second)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("erro na requisição: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("status code: %d", resp.StatusCode)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return fmt.Errorf("erro ao parsear HTML: %w", err)
+	}
+
+	updated := false
+	var socios []string
+	var telefones []string
+
+	// Yandex usa classes específicas para snippets
+	doc.Find(".Organic-Text, .OrganicText, .ExtendedText").Each(func(i int, s *goquery.Selection) {
+		text := s.Text()
+
+		foundSocios := extractSocios(text)
+		socios = append(socios, foundSocios...)
+
+		foundTelefones := extractTelefonesFromText(text)
+		telefones = append(telefones, foundTelefones...)
+	})
+
+	// Fallback: busca em títulos e descrições gerais
+	if len(socios) == 0 && len(telefones) == 0 {
+		doc.Find(".Organic, .serp-item").Each(func(i int, s *goquery.Selection) {
+			text := s.Text()
+
+			foundSocios := extractSocios(text)
+			socios = append(socios, foundSocios...)
+
+			foundTelefones := extractTelefonesFromText(text)
+			telefones = append(telefones, foundTelefones...)
+		})
+	}
+
+	// Atualiza sócios
+	if len(socios) > 0 {
+		sociosMap := make(map[string]bool)
+		for _, s := range cnpj.Socios {
+			sociosMap[strings.ToLower(s)] = true
+		}
+
+		for _, s := range removeDuplicates(socios) {
+			if !sociosMap[strings.ToLower(s)] {
+				cnpj.Socios = append(cnpj.Socios, s)
+				updated = true
+			}
+		}
+	}
+
+	// Atualiza telefones
+	if len(telefones) > 0 {
+		telefonesMap := make(map[string]bool)
+		for _, t := range cnpj.Telefones {
+			telefonesMap[t] = true
+		}
+
+		for _, t := range removeDuplicates(telefones) {
+			if !telefonesMap[t] {
+				cnpj.Telefones = append(cnpj.Telefones, t)
+				updated = true
+			}
+		}
+	}
+
+	if !updated {
+		return fmt.Errorf("nenhum dado novo encontrado no Yandex")
 	}
 
 	return nil

@@ -385,3 +385,161 @@ func extractNumberFromJSON(text, key string) string {
 	}
 	return ""
 }
+
+// BraveSearchFollowersScraper busca seguidores via Brave Search
+type BraveSearchFollowersScraper struct{}
+
+func NewBraveSearchFollowersScraper() *BraveSearchFollowersScraper {
+	return &BraveSearchFollowersScraper{}
+}
+
+func (b *BraveSearchFollowersScraper) Name() string {
+	return "Brave Search"
+}
+
+func (b *BraveSearchFollowersScraper) Search(ctx context.Context, query string) (*Instagram, error) {
+	handle := NormalizeHandle(query)
+	if handle == "" {
+		return nil, fmt.Errorf("handle inválido")
+	}
+
+	searchQuery := fmt.Sprintf("instagram @%s followers", handle)
+	url := fmt.Sprintf("https://search.brave.com/search?q=%s", searchQuery)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+	req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
+
+	time.Sleep(1 * time.Second)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("erro na requisição: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("status code: %d", resp.StatusCode)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao parsear HTML: %w", err)
+	}
+
+	followers := ""
+
+	// Busca nos snippets do Brave
+	doc.Find(".snippet, .snippet-description, .snippet-content").Each(func(i int, s *goquery.Selection) {
+		text := s.Text()
+		if found := extractFollowersFromText(text); found != "" {
+			followers = found
+			return
+		}
+	})
+
+	// Fallback: busca em resultados gerais
+	if followers == "" {
+		doc.Find(".result, .search-result").Each(func(i int, s *goquery.Selection) {
+			text := s.Text()
+			if strings.Contains(strings.ToLower(text), handle) {
+				if found := extractFollowersFromText(text); found != "" {
+					followers = found
+					return
+				}
+			}
+		})
+	}
+
+	if followers == "" {
+		return nil, fmt.Errorf("seguidores não encontrados no Brave")
+	}
+
+	instagram := NewInstagram(handle)
+	instagram.Followers = followers
+	return instagram, nil
+}
+
+// YandexSearchFollowersScraper busca seguidores via Yandex
+type YandexSearchFollowersScraper struct{}
+
+func NewYandexSearchFollowersScraper() *YandexSearchFollowersScraper {
+	return &YandexSearchFollowersScraper{}
+}
+
+func (y *YandexSearchFollowersScraper) Name() string {
+	return "Yandex Search"
+}
+
+func (y *YandexSearchFollowersScraper) Search(ctx context.Context, query string) (*Instagram, error) {
+	handle := NormalizeHandle(query)
+	if handle == "" {
+		return nil, fmt.Errorf("handle inválido")
+	}
+
+	searchQuery := fmt.Sprintf("instagram @%s followers seguidores", handle)
+	url := fmt.Sprintf("https://yandex.com/search/?text=%s&lr=102", searchQuery) // lr=102 = Brasil
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8,ru;q=0.7")
+
+	time.Sleep(1 * time.Second)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("erro na requisição: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("status code: %d", resp.StatusCode)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao parsear HTML: %w", err)
+	}
+
+	followers := ""
+
+	// Busca nos elementos do Yandex
+	doc.Find(".Organic-Text, .OrganicText, .ExtendedText").Each(func(i int, s *goquery.Selection) {
+		text := s.Text()
+		if found := extractFollowersFromText(text); found != "" {
+			followers = found
+			return
+		}
+	})
+
+	// Fallback: busca em resultados gerais
+	if followers == "" {
+		doc.Find(".Organic, .serp-item").Each(func(i int, s *goquery.Selection) {
+			text := s.Text()
+			if strings.Contains(strings.ToLower(text), handle) {
+				if found := extractFollowersFromText(text); found != "" {
+					followers = found
+					return
+				}
+			}
+		})
+	}
+
+	if followers == "" {
+		return nil, fmt.Errorf("seguidores não encontrados no Yandex")
+	}
+
+	instagram := NewInstagram(handle)
+	instagram.Followers = followers
+	return instagram, nil
+}
