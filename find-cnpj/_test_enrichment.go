@@ -16,18 +16,18 @@ func main() {
 
 	// CNPJ da Di Mazzo para testar
 	cnpjNumber := "04309163000101"
-	
+
 	fmt.Printf("🔍 Testando CNPJ: %s\n\n", cnpjNumber)
 
 	// Teste 1: BrasilAPI
 	fmt.Println("═══════════════════════════════════════════════")
 	fmt.Println("📍 Teste 1: BrasilAPI")
 	fmt.Println("═══════════════════════════════════════════════")
-	
+
 	ctx := context.Background()
 	searcher := cnpj.NewBrasilAPISearcher(cnpjNumber)
 	result, err := searcher.Search(ctx, "")
-	
+
 	if err != nil {
 		fmt.Printf("❌ Erro: %v\n", err)
 	} else {
@@ -48,13 +48,13 @@ func main() {
 	fmt.Println("\n═══════════════════════════════════════════════")
 	fmt.Println("📍 Teste 2: cnpj.biz scraper (fallback)")
 	fmt.Println("═══════════════════════════════════════════════")
-	
+
 	ctx2, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	scraper := cnpj.NewCNPJBizScraper()
 	result2, err2 := scraper.Search(ctx2, cnpjNumber)
-	
+
 	if err2 != nil {
 		fmt.Printf("❌ Erro: %v\n", err2)
 	} else {
@@ -75,12 +75,12 @@ func main() {
 	fmt.Println("\n═══════════════════════════════════════════════")
 	fmt.Println("📍 Teste 3: EnrichCNPJData (automático)")
 	fmt.Println("═══════════════════════════════════════════════")
-	
+
 	testCNPJ := &cnpj.CNPJ{
 		Number:    cnpjNumber,
 		Formatted: cnpj.ExtractCNPJ(cnpjNumber).Formatted,
 	}
-	
+
 	ctx3 := context.Background()
 	if err := cnpj.EnrichCNPJData(ctx3, testCNPJ); err != nil {
 		fmt.Printf("❌ Erro: %v\n", err)

@@ -37,7 +37,7 @@ func (s *SerasaExperianScraper) Search(ctx context.Context, cnpjNumber string) (
 	// Formato: cnpj-formatado-empresanome-cnpjlimpo
 	// Ex: 63.940.409-julia-maria-constantino---me-63940409000108
 	cnpjFormatted := formatCNPJ(cnpjClean)
-	
+
 	// Tenta formato direto (pode não funcionar sem nome)
 	// Vamos tentar padrão genérico
 	urlPath := fmt.Sprintf("%s-empresa-%s", cnpjFormatted, cnpjClean)
@@ -108,8 +108,8 @@ func (s *SerasaExperianScraper) Search(ctx context.Context, cnpjNumber string) (
 	// Busca sócios
 	doc.Find("*").Each(func(i int, sel *goquery.Selection) {
 		text := strings.ToLower(sel.Text())
-		if strings.Contains(text, "sócio") || strings.Contains(text, "administrador") || 
-		   strings.Contains(text, "proprietário") || strings.Contains(text, "qsa") {
+		if strings.Contains(text, "sócio") || strings.Contains(text, "administrador") ||
+			strings.Contains(text, "proprietário") || strings.Contains(text, "qsa") {
 			// Busca próximos elementos
 			sel.NextAll().Each(func(j int, next *goquery.Selection) {
 				nome := strings.TrimSpace(next.Text())
@@ -196,17 +196,17 @@ func EnrichFromSerasaExperian(ctx context.Context, cnpj *CNPJ) error {
 func BuildSerasaURL(cnpj, nomeEmpresa string) string {
 	cnpjClean := regexp.MustCompile(`\D`).ReplaceAllString(cnpj, "")
 	cnpjFormatted := formatCNPJ(cnpjClean)
-	
+
 	// Normaliza nome da empresa para URL
 	nomeURL := strings.ToLower(nomeEmpresa)
 	nomeURL = strings.ReplaceAll(nomeURL, " ", "-")
 	nomeURL = strings.ReplaceAll(nomeURL, ".", "")
 	nomeURL = regexp.MustCompile(`[^a-z0-9\-]`).ReplaceAllString(nomeURL, "")
-	
+
 	// Remove traços múltiplos
 	nomeURL = regexp.MustCompile(`-+`).ReplaceAllString(nomeURL, "-")
 	nomeURL = strings.Trim(nomeURL, "-")
-	
+
 	// Formato: cnpj-formatado-nome-empresa-cnpjlimpo
 	urlPath := fmt.Sprintf("%s-%s-%s", cnpjFormatted, nomeURL, cnpjClean)
 	return fmt.Sprintf("https://empresas.serasaexperian.com.br/consulta-gratis/%s", url.PathEscape(urlPath))

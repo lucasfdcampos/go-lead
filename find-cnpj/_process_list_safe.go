@@ -29,7 +29,7 @@ func main() {
 	}
 
 	filename := os.Args[1]
-	
+
 	// Configuração conservadora para evitar rate limit
 	delayBetweenQueries := 2 * time.Second
 	delayBetweenBatches := 15 * time.Second
@@ -82,7 +82,7 @@ func main() {
 	// Capturar Ctrl+C para salvar antes de sair
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	
+
 	done := make(chan bool)
 	interrupted := false
 
@@ -110,14 +110,14 @@ func main() {
 		fmt.Printf("[%3d/%3d] %-45s ", i+1, len(empresas), truncate(empresa, 45))
 
 		query := empresa + " cnpj"
-		
+
 		var result *cnpj.SearchResult
 		var attempts int
-		
+
 		// Retry loop
 		for attempts = 1; attempts <= maxRetries; attempts++ {
 			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-			
+
 			queryStart := time.Now()
 			result = cnpj.SearchWithFallbackQuiet(ctx, query, searchers...)
 			queryDuration := time.Since(queryStart)
@@ -129,7 +129,7 @@ func main() {
 				enrichCtx, enrichCancel := context.WithTimeout(context.Background(), 15*time.Second)
 				enrichErr := cnpj.EnrichCNPJData(enrichCtx, result.CNPJ)
 				enrichCancel()
-				
+
 				fmt.Printf("✅ %s (%s, %.1fs", result.CNPJ.Formatted, result.Source, queryDuration.Seconds())
 				if attempts > 1 {
 					fmt.Printf(", %d tentativas", attempts)
@@ -138,7 +138,7 @@ func main() {
 					fmt.Printf(", sem dados adicionais")
 				}
 				fmt.Printf(")\n")
-				
+
 				// Formatar telefones e sócios para CSV (separados por ;)
 				telefones := ""
 				if len(result.CNPJ.Telefones) > 0 {
@@ -149,7 +149,7 @@ func main() {
 						telefones += tel
 					}
 				}
-				
+
 				socios := ""
 				if len(result.CNPJ.Socios) > 0 {
 					for i, socio := range result.CNPJ.Socios {
@@ -159,7 +159,7 @@ func main() {
 						socios += socio
 					}
 				}
-				
+
 				writer.Write([]string{
 					empresa,
 					result.CNPJ.Number,
@@ -254,7 +254,7 @@ func readFile(filename string) ([]string, error) {
 
 	var empresas []string
 	scanner := bufio.NewScanner(file)
-	
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line != "" {
@@ -274,7 +274,7 @@ func printProgress(current, total, success, failure int, startTime time.Time, pa
 	elapsed := time.Since(startTime)
 	avgTime := elapsed / time.Duration(current)
 	estimatedRemaining := avgTime * time.Duration(remaining)
-	
+
 	fmt.Printf("\n⏸️  Pausa de %v após %d consultas...\n", pauseDuration, current)
 	fmt.Printf("   📊 Progresso: %d/%d (%.1f%%)\n", current, total, float64(current)/float64(total)*100)
 	fmt.Printf("   ✅ Sucessos: %d (%.1f%%)\n", success, float64(success)/float64(current)*100)

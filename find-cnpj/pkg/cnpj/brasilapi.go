@@ -89,7 +89,7 @@ func (b *BrasilAPISearcher) Search(ctx context.Context, query string) (*CNPJ, er
 }
 
 // EnrichCNPJData busca dados adicionais de um CNPJ já encontrado
-// Sistema de fallback em cascata: BrasilAPI → ReceitaWS → cnpj.biz → Serasa Experian
+// Sistema de fallback em cascata: BrasilAPI → ReceitaWS → cnpj.biz → Serasa Experian → DuckDuckGo → Bing
 func EnrichCNPJData(ctx context.Context, cnpj *CNPJ) error {
 	if cnpj == nil || cnpj.Number == "" {
 		return fmt.Errorf("CNPJ inválido")
@@ -117,7 +117,7 @@ func EnrichCNPJData(ctx context.Context, cnpj *CNPJ) error {
 		if len(enriched.Socios) > 0 {
 			cnpj.Socios = enriched.Socios
 		}
-		
+
 		// Se já temos dados completos, retorna
 		if isComplete() {
 			return nil
@@ -131,12 +131,12 @@ func EnrichCNPJData(ctx context.Context, cnpj *CNPJ) error {
 		} else {
 			fmt.Printf("⚠️  BrasilAPI com dados incompletos, tentando ReceitaWS...\n")
 		}
-		
+
 		errReceitaWS := EnrichFromReceitaWS(ctx, cnpj)
 		if errReceitaWS == nil && isComplete() {
 			return nil
 		}
-		
+
 		if errReceitaWS != nil {
 			fmt.Printf("⚠️  ReceitaWS falhou (%v), tentando cnpj.biz...\n", errReceitaWS)
 		}
@@ -148,28 +148,52 @@ func EnrichCNPJData(ctx context.Context, cnpj *CNPJ) error {
 		if errCnpjBiz == nil && isComplete() {
 			return nil
 		}
-		
+
 		if errCnpjBiz != nil {
 			fmt.Printf("⚠️  cnpj.biz falhou (%v), tentando Serasa Experian...\n", errCnpjBiz)
 		}
 	}
 
-	// 4. Última tentativa: Serasa Experian (scraping complexo)
+	// 4. Última tentativa tradicional: Serasa Experian (scraping complexo)
 	if !isComplete() {
 		errSerasa := EnrichFromSerasaExperian(ctx, cnpj)
 		if errSerasa == nil && isComplete() {
 			return nil
 		}
-		
-		// Se nenhum funcionou completamente mas tem algo
-		if cnpj.RazaoSocial != "" || len(cnpj.Socios) > 0 || len(cnpj.Telefones) > 0 {
-			return nil // Retorna sucesso parcial
+
+		if errSerasa != nil {
+			fmt.Printf("⚠️  Serasa Experian falhou (%v), tentando DuckDuckGo Search...\n", errSerasa)
 		}
-		
-		return fmt.Errorf("todas as fontes falharam")
 	}
 
-	return nil
+	// 5. Fallback para DuckDuckGo (busca por snippets)
+	if !isComplete() {
+		errDDG := EnrichFromDuckDuckGo(ctx, cnpj)
+		if errDDG == nil && isComplete() {
+			fmt.Printf("✅ Sucesso com fallback DuckDuckGo\n")
+			return nil
+		}
+
+		if errDDG != nil {
+			fmt.Printf("⚠️  DuckDuckGo falhou (%v), tentando Bing Search...\n", errDDG)
+		}
+	}
+
+	// 6. Fallback final: Bing Search
+	if !isComplete() {
+		errBing := EnrichFromBing(ctx, cnpj)
+		if errBing == nil && isComplete() {
+			fmt.Printf("✅ Sucesso com fallback Bing\n")
+			return nil
+		}
+	}
+
+	// Se nenhum funcionou completamente mas tem algo
+	if cnpj.RazaoSocial != "" || len(cnpj.Socios) > 0 || len(cnpj.Telefones) > 0 {
+		return nil // Retorna sucesso parcial
+	}
+
+	return fmt.Errorf("todas as 6 fontes falharam")
 }
 
 func ValidateCNPJ(ctx context.Context, cnpj string) (bool, error) {

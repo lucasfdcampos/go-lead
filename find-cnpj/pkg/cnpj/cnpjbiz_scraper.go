@@ -101,7 +101,7 @@ func (c *CNPJBizScraper) extractTelefones(doc *goquery.Document) []string {
 	// Busca por telefones no HTML
 	doc.Find("*").Each(func(i int, s *goquery.Selection) {
 		text := s.Text()
-		
+
 		// Regex para telefones brasileiros
 		phoneRegex := regexp.MustCompile(`\(?(\d{2})\)?[\s\-]?(\d{4,5})[\s\-]?(\d{4})`)
 		matches := phoneRegex.FindAllStringSubmatch(text, -1)

@@ -27,11 +27,11 @@ func main() {
 	}
 
 	filename := os.Args[1]
-	
+
 	// Configuração de delays para evitar rate limit (valores conservadores)
-	delayBetweenQueries := 2 * time.Second   // Delay entre cada consulta (aumentado)
-	delayBetweenBatches := 10 * time.Second  // Delay a cada lote de 25 (mais frequente)
-	batchSize := 25                          // Lotes menores para evitar bloqueio
+	delayBetweenQueries := 2 * time.Second  // Delay entre cada consulta (aumentado)
+	delayBetweenBatches := 10 * time.Second // Delay a cada lote de 25 (mais frequente)
+	batchSize := 25                         // Lotes menores para evitar bloqueio
 
 	fmt.Println("╔═══════════════════════════════════════════════╗")
 	fmt.Println("║   Processamento em Lote de Lista de CNPJs    ║")
@@ -80,10 +80,10 @@ func main() {
 		fmt.Printf("[%3d/%3d] %-50s ", i+1, len(empresas), empresa)
 
 		query := empresa + " cnpj"
-		
+
 		// Timeout maior para evitar interrupções
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-		
+
 		queryStart := time.Now()
 		// Usar versão quiet para não poluir output
 		result := cnpj.SearchWithFallbackQuiet(ctx, query, searchers...)
@@ -95,14 +95,14 @@ func main() {
 			enrichCtx, enrichCancel := context.WithTimeout(context.Background(), 15*time.Second)
 			enrichErr := cnpj.EnrichCNPJData(enrichCtx, result.CNPJ)
 			enrichCancel()
-			
+
 			enrichStatus := ""
 			if enrichErr != nil {
 				enrichStatus = fmt.Sprintf(" [dados adicionais não disponíveis]")
 			}
-			
+
 			fmt.Printf("✅ %s (%s, %.2fs)%s\n", result.CNPJ.Formatted, result.Source, queryDuration.Seconds(), enrichStatus)
-			
+
 			// Formatar telefones e sócios para CSV (separados por ;)
 			telefones := ""
 			if len(result.CNPJ.Telefones) > 0 {
@@ -113,7 +113,7 @@ func main() {
 					telefones += tel
 				}
 			}
-			
+
 			socios := ""
 			if len(result.CNPJ.Socios) > 0 {
 				for i, socio := range result.CNPJ.Socios {
@@ -123,7 +123,7 @@ func main() {
 					socios += socio
 				}
 			}
-			
+
 			writer.Write([]string{
 				empresa,
 				result.CNPJ.Number,
@@ -161,7 +161,7 @@ func main() {
 
 		// Força flush imediato para não perder dados em caso de interrupção
 		writer.Flush()
-		
+
 		// Delay entre consultas
 		if i < len(empresas)-1 {
 			time.Sleep(delayBetweenQueries)
@@ -173,13 +173,13 @@ func main() {
 			elapsed := time.Since(startTime)
 			avgTime := elapsed / time.Duration(i+1)
 			estimatedRemaining := avgTime * time.Duration(remaining)
-			
+
 			fmt.Printf("\n⏸️  Pausa de %v após %d consultas...\n", delayBetweenBatches, batchSize)
 			fmt.Printf("   📊 Progresso: %d/%d (%.1f%%)\n", i+1, len(empresas), float64(i+1)/float64(len(empresas))*100)
 			fmt.Printf("   ⏱️  Tempo decorrido: %v\n", elapsed.Round(time.Second))
 			fmt.Printf("   ⏱️  Tempo estimado restante: %v\n", estimatedRemaining.Round(time.Second))
 			fmt.Printf("   ✅ Sucessos até agora: %d/%d (%.1f%%)\n\n", successCount, i+1, float64(successCount)/float64(i+1)*100)
-			
+
 			// Força flush antes da pausa
 			writer.Flush()
 			time.Sleep(delayBetweenBatches)
@@ -210,7 +210,7 @@ func readFile(filename string) ([]string, error) {
 
 	var empresas []string
 	scanner := bufio.NewScanner(file)
-	
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line != "" {
