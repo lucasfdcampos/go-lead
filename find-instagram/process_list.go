@@ -14,13 +14,14 @@ import (
 )
 
 type Resultado struct {
-	Nome      string
-	Handle    string
-	URL       string
-	Fonte     string
-	Tempo     int64
+	Nome       string
+	Handle     string
+	URL        string
+	Followers  string
+	Fonte      string
+	Tempo      int64
 	Tentativas int
-	Status    string
+	Status     string
 }
 
 func main() {
@@ -80,7 +81,7 @@ func main() {
 	defer writer.Flush()
 
 	// Escrever header
-	writer.Write([]string{"Nome", "Handle", "URL", "Fonte", "Tempo_ms", "Tentativas", "Status"})
+	writer.Write([]string{"Nome", "Handle", "URL", "Followers", "Fonte", "Tempo_ms", "Tentativas", "Status"})
 	writer.Flush()
 
 	// Captura Ctrl+C para salvar progresso
@@ -137,8 +138,21 @@ func main() {
 				found = true
 				sucessos++
 
-				fmt.Printf("✅ %s (%s, %.1fs)\n", 
+				// Buscar seguidores
+				followersCtx, followersCancel := context.WithTimeout(context.Background(), 20*time.Second)
+				if err := instagram.EnrichInstagramFollowers(followersCtx, searchResult.Instagram); err == nil {
+					resultado.Followers = searchResult.Instagram.Followers
+				}
+				followersCancel()
+
+				followersInfo := ""
+				if resultado.Followers != "" {
+					followersInfo = fmt.Sprintf(" [%s seguidores]", resultado.Followers)
+				}
+
+				fmt.Printf("✅ %s%s (%s, %.1fs)\n", 
 					searchResult.Instagram.Formatted,
+					followersInfo,
 					searchResult.Source,
 					queryDuration.Seconds())
 			} else {
@@ -205,6 +219,7 @@ func writeResultado(writer *csv.Writer, r Resultado) {
 		r.Nome,
 		r.Handle,
 		r.URL,
+		r.Followers,
 		r.Fonte,
 		fmt.Sprintf("%d", r.Tempo),
 		fmt.Sprintf("%d", r.Tentativas),

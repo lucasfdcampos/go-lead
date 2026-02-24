@@ -10,6 +10,7 @@ type Instagram struct {
 	Handle    string // Ex: dimazzomenswear
 	URL       string // Ex: https://instagram.com/dimazzomenswear
 	Formatted string // Ex: @dimazzomenswear
+	Followers string // Ex: "1.2K" ou "15.3M" ou "523"
 }
 
 // NewInstagram cria uma nova instância de Instagram

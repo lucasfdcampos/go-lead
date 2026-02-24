@@ -49,7 +49,18 @@ func main() {
 	fmt.Printf("📊 Fonte: %s\n", result.Source)
 	fmt.Printf("📱 Handle: %s\n", result.Instagram.Formatted)
 	fmt.Printf("🔗 URL: %s\n", result.Instagram.URL)
-	fmt.Printf("⏱️  Tempo de busca: %v\n", result.Duration)
+	
+	// Busca número de seguidores
+	fmt.Printf("\n🔍 Buscando número de seguidores...\n")
+	if err := instagram.EnrichInstagramFollowers(ctx, result.Instagram); err != nil {
+		fmt.Printf("⚠️  Aviso: não foi possível obter seguidores: %v\n", err)
+	} else {
+		if result.Instagram.Followers != "" {
+			fmt.Printf("\n👥 Seguidores: %s\n", result.Instagram.Followers)
+		}
+	}
+	
+	fmt.Printf("\n⏱️  Tempo total: %v\n", result.Duration)
 	fmt.Println("═══════════════════════════════════════════════")
 }
 
