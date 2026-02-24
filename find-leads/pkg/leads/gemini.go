@@ -25,7 +25,7 @@ func NewGeminiScraper(apiKey string) *GeminiScraper {
 	return &GeminiScraper{
 		APIKey:  apiKey,
 		client:  &http.Client{Timeout: 30 * time.Second},
-		baseURL: "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+		baseURL: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
 	}
 }
 
@@ -39,22 +39,26 @@ func (g *GeminiScraper) Search(ctx context.Context, query, location string) ([]*
 	city, state := ParseLocation(location)
 
 	// Coleta texto
-	rawText, err := collectRawSearchText(ctx, query, city, state)
-	if err != nil || len(rawText) < 100 {
-		return nil, fmt.Errorf("não foi possível coletar texto para Gemini: %w", err)
-	}
+	rawText, _ := collectRawSearchText(ctx, query, city, state)
 
-	maxLen := len(rawText)
-	if maxLen > 4000 {
-		maxLen = 4000
-	}
-
-	prompt := fmt.Sprintf(`Extraia todos os estabelecimentos comerciais do tipo "%s" em "%s-%s" do texto abaixo.
+	var prompt string
+	if len(rawText) >= 100 {
+		maxLen := len(rawText)
+		if maxLen > 4000 {
+			maxLen = 4000
+		}
+		prompt = fmt.Sprintf(`Extraia todos os estabelecimentos comerciais do tipo "%s" em "%s-%s" do texto abaixo.
 Retorne apenas um JSON array com campos: name, phone, address, website, email.
-Use "" para campos não disponíveis.
+Use "" para campos não disponíveis. NÃO inclua marketplaces online como Mercado Livre ou Amazon.
 
 Texto:
 %s`, query, city, state, rawText[:maxLen])
+	} else {
+		// Usa conhecimento interno sem contexto web
+		prompt = fmt.Sprintf(`Liste estabelecimentos comerciais do tipo "%s" em %s, %s, Brasil.
+Retorne apenas um JSON array com campos: name, phone, address, website, email.
+Use "" para campos não disponíveis.`, query, city, state)
+	}
 
 	body := map[string]interface{}{
 		"contents": []map[string]interface{}{
@@ -98,11 +102,15 @@ Texto:
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&geminiResp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("gemini decode error (status %d): %w", resp.StatusCode, err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("gemini status %d", resp.StatusCode)
 	}
 
 	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
-		return nil, fmt.Errorf("gemini retornou resposta vazia")
+		return nil, fmt.Errorf("gemini resposta vazia (status %d, candidates=%d)", resp.StatusCode, len(geminiResp.Candidates))
 	}
 
 	content := geminiResp.Candidates[0].Content.Parts[0].Text

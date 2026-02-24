@@ -12,25 +12,35 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
+// junkLabels são palavras-chave de UI que indicam que o texto não é nome de empresa
+var junkLabels = []string{
+	"ligar", "endereço", "whatsapp", "horário", "horario", "aberto",
+	"avaliações", "avaliacao", "ver mais", "website", "rotas", "compartilhar",
+	"maps", "google", "facebook", "instagram", "seg a", "seg–",
+}
+
 // extractLeadsFromText extrai leads de texto não estruturado (snippets de busca)
 func extractLeadsFromText(text, city, state, source string) []*Lead {
 	var result []*Lead
-	phoneRe := regexp.MustCompile(`\(?\d{2}\)?\s*\d{4,5}[-\s]?\d{4}`)
+	phoneRe := regexp.MustCompile(`\(?\d{2}\)?[\s.]?\d{4,5}[-\s.]?\d{4}`)
 	emailRe := regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
+	digitStartRe := regexp.MustCompile(`^[\d./_\-]+`)
+	urlRe := regexp.MustCompile(`https?://\S+`)
+	junkRe := regexp.MustCompile(`\s{3,}`) // múltiplos espaços = UI junk
 
 	lines := strings.Split(text, "\n")
+	prevLine := ""
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || len(line) < 5 {
+			prevLine = line
 			continue
 		}
 
-		// Detecta se a linha parece conter um nome de empresa
 		phones := phoneRe.FindAllString(line, 2)
 		emails := emailRe.FindAllString(line, 1)
 
 		if len(phones) > 0 || len(emails) > 0 {
-			// Tenta extrair nome da linha ou linha anterior
 			lead := &Lead{
 				City:   city,
 				State:  state,
@@ -43,23 +53,61 @@ func extractLeadsFromText(text, city, state, source string) []*Lead {
 					lead.Phone2 = normalizePhone(phones[1])
 				}
 			}
-
 			if len(emails) > 0 {
 				lead.Email = emails[0]
 			}
 
-			// Remove telefones e e-mails para extrair possível nome
-			namePart := phoneRe.ReplaceAllString(line, "")
+			// Extrai nome: parte ANTES do primeiro telefone na linha
+			phoneLoc := phoneRe.FindStringIndex(line)
+			namePart := line
+			if phoneLoc != nil && phoneLoc[0] > 0 {
+				namePart = line[:phoneLoc[0]]
+			}
+			namePart = urlRe.ReplaceAllString(namePart, "")
 			namePart = emailRe.ReplaceAllString(namePart, "")
-			namePart = regexp.MustCompile(`https?://\S+`).ReplaceAllString(namePart, "")
-			namePart = strings.TrimSpace(regexp.MustCompile(`[-|·•,]+$`).ReplaceAllString(namePart, ""))
+			namePart = regexp.MustCompile(`[-|·•,·–]+$`).ReplaceAllString(namePart, "")
+			namePart = strings.TrimSpace(namePart)
 
-			if len(namePart) > 3 && len(namePart) < 100 {
+			// Descarta se parece lixo de UI
+			isJunk := false
+			lower := strings.ToLower(namePart)
+			for _, lbl := range junkLabels {
+				if strings.Contains(lower, lbl) {
+					isJunk = true
+					break
+				}
+			}
+			if digitStartRe.MatchString(namePart) {
+				isJunk = true
+			}
+			if junkRe.MatchString(namePart) {
+				// múltiplos espaços = fragmento de UI (ex: "Ligar   Endereço   ...")
+				isJunk = true
+			}
+
+			// Se o nome da linha atual é lixo, tenta usar a linha anterior
+			if isJunk && prevLine != "" && len(prevLine) > 3 && len(prevLine) < 80 {
+				prevLower := strings.ToLower(prevLine)
+				prevIsJunk := false
+				for _, lbl := range junkLabels {
+					if strings.Contains(prevLower, lbl) {
+						prevIsJunk = true
+						break
+					}
+				}
+				if !prevIsJunk && !digitStartRe.MatchString(prevLine) {
+					namePart = prevLine
+					isJunk = false
+				}
+			}
+
+			if !isJunk && len(namePart) > 2 && len(namePart) < 100 {
 				lead.Name = namePart
 			}
 
 			result = append(result, lead)
 		}
+		prevLine = line
 	}
 
 	return result
@@ -74,9 +122,10 @@ func (d *DDGLeadScraper) Name() string   { return "DuckDuckGo" }
 
 func (d *DDGLeadScraper) Search(ctx context.Context, query, location string) ([]*Lead, error) {
 	city, state := ParseLocation(location)
-	q := fmt.Sprintf(`"%s" "%s" telefone endereço`, query, city)
-	return searchEngineLeads(ctx, "https://duckduckgo.com/html/?q="+url.QueryEscape(q),
-		".result__snippet, .result__body", city, state, "DuckDuckGo", 1*time.Second)
+	q := fmt.Sprintf(`"%s" "%s" "%s" telefone`, query, city, state)
+	// Usa versão lite do DDG que tem menos bot-detection
+	return searchEngineLeads(ctx, "https://lite.duckduckgo.com/lite/?q="+url.QueryEscape(q),
+		"td.result-snippet, .result-snippet, td", city, state, "DuckDuckGo", 1500*time.Millisecond)
 }
 
 // ─── Bing ────────────────────────────────────────────────────────────────────
@@ -102,9 +151,9 @@ func (b *BraveLeadScraper) Name() string     { return "Brave Search" }
 
 func (b *BraveLeadScraper) Search(ctx context.Context, query, location string) ([]*Lead, error) {
 	city, state := ParseLocation(location)
-	q := fmt.Sprintf(`%s %s telefone endereço`, query, city)
+	q := fmt.Sprintf(`"%s" "%s" "%s" telefone`, query, city, state)
 	return searchEngineLeads(ctx, "https://search.brave.com/search?q="+url.QueryEscape(q),
-		".snippet-description, .snippet-content, .result-description", city, state, "Brave", 1*time.Second)
+		".snippet-description, .snippet-content, .result-description, .fdb", city, state, "Brave", 2500*time.Millisecond)
 }
 
 // ─── Yandex ──────────────────────────────────────────────────────────────────
@@ -116,10 +165,10 @@ func (y *YandexLeadScraper) Name() string      { return "Yandex" }
 
 func (y *YandexLeadScraper) Search(ctx context.Context, query, location string) ([]*Lead, error) {
 	city, state := ParseLocation(location)
-	q := fmt.Sprintf(`%s %s telefone Brasil`, query, city)
+	q := fmt.Sprintf(`%s %s-%s telefone Brasil`, query, city, state)
 	return searchEngineLeads(ctx,
 		fmt.Sprintf("https://yandex.com/search/?text=%s&lr=102", url.QueryEscape(q)),
-		".Organic-Text, .OrganicText, .ExtendedText, .serp-item__text", city, state, "Yandex", 1*time.Second)
+		".Organic-Text, .OrganicText, .ExtendedText, .serp-item__text", city, state, "Yandex", 2000*time.Millisecond)
 }
 
 // ─── Helper genérico ─────────────────────────────────────────────────────────
@@ -131,8 +180,9 @@ func searchEngineLeads(ctx context.Context, searchURL, selector, city, state, so
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
@@ -150,23 +200,120 @@ func searchEngineLeads(ctx context.Context, searchURL, selector, city, state, so
 		return nil, err
 	}
 
-	var allText strings.Builder
-	doc.Find(selector).Each(func(i int, s *goquery.Selection) {
-		allText.WriteString(s.Text())
-		allText.WriteString("\n")
-	})
+	phoneRe := regexp.MustCompile(`\(?\d{2}\)?[\s.]?\d{4,5}[-\s.]?\d{4}`)
+	emailRe := regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
+	digitStartRe := regexp.MustCompile(`^[\d./_\-]+`)
+	junkMultiSpaceRe := regexp.MustCompile(`\s{3,}`)
 
-	// Fallback: pega todo o texto visível
-	if allText.Len() < 50 {
-		doc.Find("p, li, span, div").Each(func(i int, s *goquery.Selection) {
-			t := strings.TrimSpace(s.Text())
-			if len(t) > 10 && len(t) < 300 {
-				allText.WriteString(t)
-				allText.WriteString("\n")
+	isJunkName := func(s string) bool {
+		if s == "" || digitStartRe.MatchString(s) || junkMultiSpaceRe.MatchString(s) {
+			return true
+		}
+		lower := strings.ToLower(s)
+		for _, lbl := range junkLabels {
+			if strings.Contains(lower, lbl) {
+				return true
 			}
-		})
+		}
+		return false
 	}
 
-	leads := extractLeadsFromText(allText.String(), city, state, source)
+	extractName := func(titleText, snippetText string) string {
+		// Tenta título primeiro
+		titleText = strings.TrimSpace(titleText)
+		if !isJunkName(titleText) && len(titleText) > 2 && len(titleText) < 80 {
+			// Remove sufixos comuns de título de resultados de busca
+			for _, sep := range []string{" - ", " | ", " – ", " · "} {
+				if idx := strings.Index(titleText, sep); idx > 2 {
+					titleText = titleText[:idx]
+					break
+				}
+			}
+			return strings.TrimSpace(titleText)
+		}
+		// Fallback: parte antes do primeiro telefone no snippet
+		if phoneLoc := phoneRe.FindStringIndex(snippetText); phoneLoc != nil && phoneLoc[0] > 2 {
+			namePart := strings.TrimSpace(snippetText[:phoneLoc[0]])
+			namePart = regexp.MustCompile(`[-|·•,–]+$`).ReplaceAllString(namePart, "")
+			namePart = strings.TrimSpace(namePart)
+			if !isJunkName(namePart) && len(namePart) > 2 && len(namePart) < 80 {
+				return namePart
+			}
+		}
+		return ""
+	}
+
+	var leads []*Lead
+
+	// Tenta extrair resultados estruturados (título + snippet por resultado)
+	// Seletores para diferentes motores
+	resultSelectors := []struct{ container, title, snippet string }{
+		// DuckDuckGo
+		{".result", ".result__title", ".result__snippet"},
+		// Bing
+		{"#b_results .b_algo", "h2", ".b_caption p"},
+		// Brave
+		{"[data-type='web'] .snippet", ".heading-results a, .result-title a, h3", ".snippet-description, .result-description"},
+		// Brave alternativo
+		{".card", "h3, .title", ".description, .snippet-description"},
+	}
+
+	for _, rs := range resultSelectors {
+		count := 0
+		doc.Find(rs.container).Each(func(_ int, item *goquery.Selection) {
+			titleText := strings.TrimSpace(item.Find(rs.title).First().Text())
+			snippetText := strings.TrimSpace(item.Find(rs.snippet).First().Text())
+			combined := titleText + "\n" + snippetText
+
+			phones := phoneRe.FindAllString(combined, 2)
+			emails := emailRe.FindAllString(combined, 1)
+			if len(phones) == 0 && len(emails) == 0 {
+				return
+			}
+
+			lead := &Lead{City: city, State: state, Source: source}
+			if len(phones) > 0 {
+				lead.Phone = normalizePhone(phones[0])
+				if len(phones) > 1 {
+					lead.Phone2 = normalizePhone(phones[1])
+				}
+			}
+			if len(emails) > 0 {
+				lead.Email = emails[0]
+			}
+			lead.Name = extractName(titleText, snippetText)
+			leads = append(leads, lead)
+			count++
+		})
+		if count > 0 {
+			break
+		}
+	}
+
+	// Fallback: extração por texto corrido do seletor original
+	if len(leads) == 0 {
+		var allText strings.Builder
+		doc.Find(selector).Each(func(i int, s *goquery.Selection) {
+			allText.WriteString(s.Text())
+			allText.WriteString("\n")
+		})
+		// Segundo fallback: divs de conteúdo
+		if allText.Len() < 50 {
+			doc.Find(".content, .description, p, li, [class*='snippet'], [class*='result'], [class*='caption']").Each(func(i int, s *goquery.Selection) {
+				t := strings.TrimSpace(s.Text())
+				if len(t) > 10 && len(t) < 500 {
+					allText.WriteString(t)
+					allText.WriteString("\n")
+				}
+			})
+		}
+		// Terceiro fallback: texto completo do body
+		if allText.Len() < 50 {
+			bodyText := strings.TrimSpace(doc.Find("body").Text())
+			allText.WriteString(bodyText)
+		}
+		leads = extractLeadsFromText(allText.String(), city, state, source)
+	}
+
 	return leads, nil
 }

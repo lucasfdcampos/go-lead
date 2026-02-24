@@ -32,18 +32,18 @@ func (l *Lead) NormalizedPhone() string {
 
 func normalizeString(s string) string {
 	accents := map[rune]rune{
-		'á':'a', 'à':'a', 'â':'a', 'ã':'a', 'ä':'a',
-		'é':'e', 'è':'e', 'ê':'e', 'ë':'e',
-		'í':'i', 'ì':'i', 'î':'i', 'ï':'i',
-		'ó':'o', 'ò':'o', 'ô':'o', 'õ':'o', 'ö':'o',
-		'ú':'u', 'ù':'u', 'û':'u', 'ü':'u',
-		'ç':'c', 'ñ':'n',
-		'Á':'a', 'À':'a', 'Â':'a', 'Ã':'a',
-		'É':'e', 'È':'e', 'Ê':'e',
-		'Í':'i', 'Ì':'i',
-		'Ó':'o', 'Ò':'o', 'Ô':'o', 'Õ':'o',
-		'Ú':'u', 'Ù':'u', 'Û':'u',
-		'Ç':'c', 'Ñ':'n',
+		'á': 'a', 'à': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a',
+		'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+		'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+		'ó': 'o', 'ò': 'o', 'ô': 'o', 'õ': 'o', 'ö': 'o',
+		'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
+		'ç': 'c', 'ñ': 'n',
+		'Á': 'a', 'À': 'a', 'Â': 'a', 'Ã': 'a',
+		'É': 'e', 'È': 'e', 'Ê': 'e',
+		'Í': 'i', 'Ì': 'i',
+		'Ó': 'o', 'Ò': 'o', 'Ô': 'o', 'Õ': 'o',
+		'Ú': 'u', 'Ù': 'u', 'Û': 'u',
+		'Ç': 'c', 'Ñ': 'n',
 	}
 	var b strings.Builder
 	for _, r := range strings.ToLower(s) {
@@ -68,32 +68,62 @@ func Deduplicate(leadsList []*Lead) []*Lead {
 
 	score := func(l *Lead) int {
 		s := 0
-		if l.Phone != "" { s += 3 }
-		if l.Address != "" { s += 2 }
-		if l.CNPJ != "" { s += 2 }
-		if l.Website != "" { s++ }
-		if l.Email != "" { s++ }
-		if l.Category != "" { s++ }
+		if l.Phone != "" {
+			s += 3
+		}
+		if l.Address != "" {
+			s += 2
+		}
+		if l.CNPJ != "" {
+			s += 2
+		}
+		if l.Website != "" {
+			s++
+		}
+		if l.Email != "" {
+			s++
+		}
+		if l.Category != "" {
+			s++
+		}
 		return s
 	}
 	_ = score
 
 	merge := func(existing, incoming *Lead) {
-		if existing.Phone == "" && incoming.Phone != "" { existing.Phone = incoming.Phone }
-		if existing.Phone2 == "" && incoming.Phone != "" && incoming.Phone != existing.Phone { existing.Phone2 = incoming.Phone }
-		if existing.Address == "" && incoming.Address != "" { existing.Address = incoming.Address }
-		if existing.Website == "" && incoming.Website != "" { existing.Website = incoming.Website }
-		if existing.Email == "" && incoming.Email != "" { existing.Email = incoming.Email }
-		if existing.CNPJ == "" && incoming.CNPJ != "" { existing.CNPJ = incoming.CNPJ }
-		if existing.Category == "" && incoming.Category != "" { existing.Category = incoming.Category }
-		if existing.Rating == "" && incoming.Rating != "" { existing.Rating = incoming.Rating }
+		if existing.Phone == "" && incoming.Phone != "" {
+			existing.Phone = incoming.Phone
+		}
+		if existing.Phone2 == "" && incoming.Phone != "" && incoming.Phone != existing.Phone {
+			existing.Phone2 = incoming.Phone
+		}
+		if existing.Address == "" && incoming.Address != "" {
+			existing.Address = incoming.Address
+		}
+		if existing.Website == "" && incoming.Website != "" {
+			existing.Website = incoming.Website
+		}
+		if existing.Email == "" && incoming.Email != "" {
+			existing.Email = incoming.Email
+		}
+		if existing.CNPJ == "" && incoming.CNPJ != "" {
+			existing.CNPJ = incoming.CNPJ
+		}
+		if existing.Category == "" && incoming.Category != "" {
+			existing.Category = incoming.Category
+		}
+		if existing.Rating == "" && incoming.Rating != "" {
+			existing.Rating = incoming.Rating
+		}
 		if !strings.Contains(existing.Source, incoming.Source) {
 			existing.Source += "+" + incoming.Source
 		}
 	}
 
 	for _, lead := range leadsList {
-		if lead.Name == "" { continue }
+		if lead.Name == "" {
+			continue
+		}
 		phone := lead.NormalizedPhone()
 		name := lead.NormalizedName()
 
@@ -106,13 +136,19 @@ func Deduplicate(leadsList []*Lead) []*Lead {
 		if name != "" {
 			if existing, ok := byName[name]; ok {
 				merge(existing, lead)
-				if phone != "" && len(phone) >= 8 { byPhone[phone] = existing }
+				if phone != "" && len(phone) >= 8 {
+					byPhone[phone] = existing
+				}
 				continue
 			}
 		}
 		result = append(result, lead)
-		if phone != "" && len(phone) >= 8 { byPhone[phone] = lead }
-		if name != "" { byName[name] = lead }
+		if phone != "" && len(phone) >= 8 {
+			byPhone[phone] = lead
+		}
+		if name != "" {
+			byName[name] = lead
+		}
 	}
 	return result
 }
