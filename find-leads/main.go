@@ -35,6 +35,7 @@ func main() {
 	fmt.Printf("  Início: %s\n\n", time.Now().Format("02/01/2006 15:04:05"))
 
 	geoapifyKey := os.Getenv("GEOAPIFY_API_KEY")
+	tomtomKey := os.Getenv("TOMTOM_API_KEY")
 	groqKey := os.Getenv("GROQ_API_KEY")
 	geminiKey := os.Getenv("GEMINI_API_KEY")
 
@@ -53,6 +54,9 @@ func main() {
 
 	if geoapifyKey != "" {
 		searchers = append([]leads.Searcher{leads.NewGeoapifyScraper(geoapifyKey)}, searchers...)
+	}
+	if tomtomKey != "" {
+		searchers = append([]leads.Searcher{leads.NewTomTomScraper(tomtomKey)}, searchers...)
 	}
 	if groqKey != "" {
 		searchers = append(searchers, leads.NewGroqScraper(groqKey))

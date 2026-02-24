@@ -2,6 +2,7 @@ package leads
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -60,10 +61,24 @@ func normalizeString(s string) string {
 	return strings.TrimSpace(result)
 }
 
+// wordBagKey retorna uma chave canônica para deduplicação por "bag-of-words":
+// lowercase sem acentos, palavras ordenadas alfabeticamente.
+// Isso captura variações de ordem como "Loja de Roupas XYZ" == "XYZ Loja de Roupas".
+func wordBagKey(name string) string {
+	normalized := normalizeString(name)
+	words := strings.Fields(normalized)
+	if len(words) < 2 {
+		return "" // nomes de palavra única: sem vantagem em usar word-bag
+	}
+	sort.Strings(words)
+	return strings.Join(words, " ")
+}
+
 // Deduplicate remove leads duplicados priorizando os com mais dados
 func Deduplicate(leadsList []*Lead) []*Lead {
 	byPhone := make(map[string]*Lead)
 	byName := make(map[string]*Lead)
+	byWordBag := make(map[string]*Lead)
 	var result []*Lead
 
 	score := func(l *Lead) int {
@@ -126,6 +141,7 @@ func Deduplicate(leadsList []*Lead) []*Lead {
 		}
 		phone := lead.NormalizedPhone()
 		name := lead.NormalizedName()
+		bagKey := wordBagKey(lead.Name)
 
 		if phone != "" && len(phone) >= 8 {
 			if existing, ok := byPhone[phone]; ok {
@@ -142,12 +158,24 @@ func Deduplicate(leadsList []*Lead) []*Lead {
 				continue
 			}
 		}
+		if bagKey != "" {
+			if existing, ok := byWordBag[bagKey]; ok {
+				merge(existing, lead)
+				if phone != "" && len(phone) >= 8 {
+					byPhone[phone] = existing
+				}
+				continue
+			}
+		}
 		result = append(result, lead)
 		if phone != "" && len(phone) >= 8 {
 			byPhone[phone] = lead
 		}
 		if name != "" {
 			byName[name] = lead
+		}
+		if bagKey != "" {
+			byWordBag[bagKey] = lead
 		}
 	}
 	return result
