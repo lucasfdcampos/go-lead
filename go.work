@@ -4,4 +4,5 @@ use (
 	./find-cnpj
 	./find-instagram
 	./find-leads
+	./lead-api
 )

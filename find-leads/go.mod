@@ -1,4 +1,4 @@
-module find-leads
+module github.com/lucasfdcampos/find-leads
 
 go 1.24.0
 

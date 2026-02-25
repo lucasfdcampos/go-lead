@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"find-leads/pkg/leads"
+	"github.com/lucasfdcampos/find-leads/pkg/leads"
 
 	"github.com/joho/godotenv"
 )

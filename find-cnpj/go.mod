@@ -1,4 +1,4 @@
-module go-lead
+module github.com/lucasfdcampos/find-cnpj
 
 go 1.24.0
 

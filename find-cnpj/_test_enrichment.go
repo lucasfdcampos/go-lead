@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"go-lead/pkg/cnpj"
+	"github.com/lucasfdcampos/find-cnpj/pkg/cnpj"
 )
 
 func main() {

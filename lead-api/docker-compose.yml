@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${ADDR:-8080}:8080"
+    environment:
+      ADDR: ":8080"
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+      REDIS_DB: "0"
+      MONGO_URI: "mongodb://mongo:27017"
+      GEOAPIFY_API_KEY: "${GEOAPIFY_API_KEY:-}"
+      TOMTOM_API_KEY: "${TOMTOM_API_KEY:-}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --save 60 1
+      --loglevel warning
+      ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  mongo_data:
