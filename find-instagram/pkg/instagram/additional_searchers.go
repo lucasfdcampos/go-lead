@@ -3,7 +3,6 @@ package instagram
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -112,13 +111,17 @@ func (d *DuckDuckGoSearcher) Search(ctx context.Context, query string) (*Instagr
 		})
 	}
 
-	// Busca em todo o corpo se não encontrou ainda
+	// Busca em todo o corpo de resultados (scoped) se não encontrou ainda
 	if foundHandle == nil {
-		bodyText := doc.Find("body").Text()
-		handles := ExtractAllHandles(bodyText)
-		if len(handles) > 0 {
-			foundHandle = handles[0]
-		}
+		doc.Find(".result__body, .result, #links").Each(func(_ int, s *goquery.Selection) {
+			if foundHandle != nil {
+				return
+			}
+			handles := ExtractAllHandles(s.Text())
+			if len(handles) > 0 {
+				foundHandle = handles[0]
+			}
+		})
 	}
 
 	if foundHandle == nil {
@@ -199,13 +202,17 @@ func (g *GoogleSearcher) Search(ctx context.Context, query string) (*Instagram, 
 		}
 	})
 
-	// Busca em todo o texto
+	// Busca em containers de resultado (scoped)
 	if foundHandle == nil {
-		bodyText := doc.Find("body").Text()
-		handles := ExtractAllHandles(bodyText)
-		if len(handles) > 0 {
-			foundHandle = handles[0]
-		}
+		doc.Find("#search, #rso, .g").Each(func(_ int, s *goquery.Selection) {
+			if foundHandle != nil {
+				return
+			}
+			handles := ExtractAllHandles(s.Text())
+			if len(handles) > 0 {
+				foundHandle = handles[0]
+			}
+		})
 	}
 
 	if foundHandle == nil {
@@ -389,16 +396,254 @@ func (b *BingSearcher) Search(ctx context.Context, query string) (*Instagram, er
 		return nil, fmt.Errorf("status code: %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	bodyText := string(body)
-	handles := ExtractAllHandles(bodyText)
-	if len(handles) > 0 {
-		return handles[0], nil
+	var found *Instagram
+	// Scope to Bing result containers only
+	doc.Find("#b_results .b_algo").Each(func(_ int, s *goquery.Selection) {
+		if found != nil {
+			return
+		}
+		s.Find("a").Each(func(_ int, a *goquery.Selection) {
+			if found != nil {
+				return
+			}
+			if href, ok := a.Attr("href"); ok && strings.Contains(href, "instagram.com/") {
+				handles := ExtractAllHandles(href)
+				if len(handles) > 0 {
+					found = handles[0]
+				}
+			}
+		})
+		if found == nil {
+			text := s.Text()
+			handles := ExtractAllHandles(text)
+			if len(handles) > 0 {
+				found = handles[0]
+			}
+		}
+	})
+	if found != nil {
+		return found, nil
 	}
 
 	return nil, fmt.Errorf("nenhum handle encontrado")
+}
+
+// ─── SearXNG Instagram Searcher ───────────────────────────────────────────────
+
+var searxngIGInstances = []string{
+	"https://searx.be",
+	"https://search.bus-hit.me",
+	"https://paulgo.io",
+}
+
+// SearXNGSearcher busca usando SearXNG (instâncias públicas)
+type SearXNGSearcher struct{}
+
+func NewSearXNGSearcher() *SearXNGSearcher { return &SearXNGSearcher{} }
+func (s *SearXNGSearcher) Name() string    { return "SearXNG" }
+
+func (s *SearXNGSearcher) Search(ctx context.Context, query string) (*Instagram, error) {
+	q := query
+	if !strings.Contains(strings.ToLower(query), "instagram") {
+		q = query + " instagram"
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	for _, instance := range searxngIGInstances {
+		searchURL := fmt.Sprintf("%s/search?q=%s&language=pt-BR&format=html", instance, url.QueryEscape(q))
+
+		req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")
+		req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9")
+
+		time.Sleep(800 * time.Millisecond)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+
+		doc, err := goquery.NewDocumentFromReader(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+
+		// Only scan result content areas, skip nav/footer/header
+		var found *Instagram
+		doc.Find(".result-content, .result-title, .result-url, article, [class*='result']").Each(func(_ int, sel *goquery.Selection) {
+			if found != nil {
+				return
+			}
+			sel.Find("a").Each(func(_ int, a *goquery.Selection) {
+				if found != nil {
+					return
+				}
+				if href, ok := a.Attr("href"); ok && strings.Contains(href, "instagram.com/") {
+					handles := ExtractAllHandles(href)
+					if len(handles) > 0 {
+						found = handles[0]
+					}
+				}
+			})
+			if found == nil {
+				handles := ExtractAllHandles(sel.Text())
+				if len(handles) > 0 {
+					found = handles[0]
+				}
+			}
+		})
+
+		if found != nil {
+			return found, nil
+		}
+	}
+
+	return nil, fmt.Errorf("nenhum handle encontrado no SearXNG")
+}
+
+// ─── Mojeek Instagram Searcher ────────────────────────────────────────────────
+
+// MojeekSearcher busca usando Mojeek
+type MojeekSearcher struct{}
+
+func NewMojeekSearcher() *MojeekSearcher { return &MojeekSearcher{} }
+func (m *MojeekSearcher) Name() string   { return "Mojeek" }
+
+func (m *MojeekSearcher) Search(ctx context.Context, query string) (*Instagram, error) {
+	q := query
+	if !strings.Contains(strings.ToLower(query), "instagram") {
+		q = query + " instagram"
+	}
+
+	searchURL := "https://www.mojeek.com/search?q=" + url.QueryEscape(q)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("mojeek: request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9")
+
+	time.Sleep(800 * time.Millisecond)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("mojeek: do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("mojeek: status %d", resp.StatusCode)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("mojeek: parse: %w", err)
+	}
+
+	// Only scan result content areas, skip nav/footer/header
+	var found *Instagram
+	doc.Find(".result, .result-wrap, li.result, [class*='result']").Each(func(_ int, sel *goquery.Selection) {
+		if found != nil {
+			return
+		}
+		sel.Find("a").Each(func(_ int, a *goquery.Selection) {
+			if found != nil {
+				return
+			}
+			if href, ok := a.Attr("href"); ok && strings.Contains(href, "instagram.com/") {
+				handles := ExtractAllHandles(href)
+				if len(handles) > 0 {
+					found = handles[0]
+				}
+			}
+		})
+		if found == nil {
+			handles := ExtractAllHandles(sel.Text())
+			if len(handles) > 0 {
+				found = handles[0]
+			}
+		}
+	})
+
+	if found != nil {
+		return found, nil
+	}
+
+	return nil, fmt.Errorf("nenhum handle encontrado no Mojeek")
+}
+
+// ─── Swisscows Instagram Searcher ─────────────────────────────────────────────
+
+// SwisscowsSearcher busca usando Swisscows
+type SwisscowsSearcher struct{}
+
+func NewSwisscowsSearcher() *SwisscowsSearcher { return &SwisscowsSearcher{} }
+func (s *SwisscowsSearcher) Name() string      { return "Swisscows" }
+
+func (s *SwisscowsSearcher) Search(ctx context.Context, query string) (*Instagram, error) {
+	q := query
+	if !strings.Contains(strings.ToLower(query), "instagram") {
+		q = query + " instagram"
+	}
+
+	searchURL := "https://swisscows.com/web?query=" + url.QueryEscape(q) + "&region=pt-BR"
+
+	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("swisscows: request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9")
+
+	time.Sleep(1 * time.Second)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("swisscows: do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("swisscows: status %d", resp.StatusCode)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("swisscows: parse: %w", err)
+	}
+
+	// Swisscows renders via React; results appear in .web-results > .item or [class*='item']
+	// Explicitly skip footer/nav by only looking at main content
+	var found *Instagram
+	doc.Find(".web-results .item, .result-item, [class*='web-results'] a, main a").Each(func(_ int, sel *goquery.Selection) {
+		if found != nil {
+			return
+		}
+		if href, ok := sel.Attr("href"); ok && strings.Contains(href, "instagram.com/") {
+			handles := ExtractAllHandles(href)
+			if len(handles) > 0 {
+				found = handles[0]
+			}
+		}
+	})
+
+	if found != nil {
+		return found, nil
+	}
+
+	// Swisscows is JS-heavy; often nothing useful in static HTML
+	return nil, fmt.Errorf("nenhum handle encontrado no Swisscows")
 }

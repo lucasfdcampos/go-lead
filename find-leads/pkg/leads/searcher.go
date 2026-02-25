@@ -24,11 +24,25 @@ type SearchResult struct {
 
 // ParseLocation divide "Arapongas-PR" em cidade e estado
 func ParseLocation(location string) (city, state string) {
-	parts := strings.SplitN(location, "-", 2)
-	city = strings.TrimSpace(parts[0])
-	if len(parts) == 2 {
-		state = strings.ToUpper(strings.TrimSpace(parts[1]))
+	location = strings.TrimSpace(location)
+
+	// Normalise separators: "Arapongas - PR", "Arapongas-PR", "Arapongas, PR", "Arapongas,PR"
+	// Replace any combination of spaces/commas/dashes around a 2-letter state code.
+	// Strategy: split on comma or dash (allowing surrounding spaces), then check last token.
+	re := regexp.MustCompile(`[\s,\-]+`)
+	tokens := re.Split(location, -1)
+
+	if len(tokens) >= 2 {
+		last := strings.ToUpper(tokens[len(tokens)-1])
+		if len(last) == 2 && last >= "AA" && last <= "ZZ" {
+			state = last
+			city = strings.Join(tokens[:len(tokens)-1], " ")
+			return
+		}
 	}
+
+	// Fallback: entire string is the city
+	city = location
 	return
 }
 

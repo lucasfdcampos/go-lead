@@ -61,9 +61,46 @@ func NormalizeHandle(handle string) string {
 	return handle
 }
 
+// blockedHandles contains well-known false-positive handles that belong to
+// search engines, infrastructure services, or other non-business entities.
+var blockedHandles = map[string]bool{
+	"swisscows.official": true,
+	"swisscows":          true,
+	"mojeek":             true,
+	"duckduckgo":         true,
+	"bingmaps":           true,
+	"bing":               true,
+	"yandex":             true,
+	"brave":              true,
+	"google":             true,
+	"googleads":          true,
+	"searx":              true,
+	"paulgo.io":          true,
+	"instagram":          true,
+	"meta":               true,
+	"facebook":           true,
+	"twitter":            true,
+	"tiktok":             true,
+	"youtube":            true,
+	"whatsapp":           true,
+}
+
+// domainTLDRe matches handles that look like domain names (e.g. lasalle.org.br, site.com).
+var domainTLDRe = regexp.MustCompile(`(?i)\.(com|net|org|edu|gov|br|pt|io|co|info|biz)(\.[a-z]{2})?$`)
+
 // IsValidHandle verifica se um handle é válido
 func IsValidHandle(handle string) bool {
 	if handle == "" {
+		return false
+	}
+
+	// Reject handles blocked explicitly
+	if blockedHandles[strings.ToLower(handle)] {
+		return false
+	}
+
+	// Reject handles that look like domain names (e.g. lasalle.org.br, site.com.br)
+	if domainTLDRe.MatchString(handle) {
 		return false
 	}
 

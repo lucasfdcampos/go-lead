@@ -62,12 +62,15 @@ func EnrichInstagram(
 
 	// Live search
 	searchQuery := fmt.Sprintf("%s %s instagram", name, city)
-	tctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	tctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 
 	searchers := []igpkg.Searcher{
 		igpkg.NewDuckDuckGoSearcher(),
 		igpkg.NewBingSearcher(),
+		igpkg.NewSearXNGSearcher(),
+		igpkg.NewMojeekSearcher(),
+		igpkg.NewSwisscowsSearcher(),
 	}
 
 	result := igpkg.SearchWithFallbackQuiet(tctx, searchQuery, searchers...)
@@ -77,15 +80,11 @@ func EnrichInstagram(
 
 	ig := result.Instagram
 
-	// Try to get follower count via InstaStoriesViewer
+	// Try to get follower count via multi-scraper cascade (12 sources)
 	if ig.Followers == "" {
-		fCtx, fCancel := context.WithTimeout(ctx, 20*time.Second)
+		fCtx, fCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer fCancel()
-		fscraper := igpkg.NewInstaStoriesViewerScraper()
-		enriched, err := fscraper.Search(fCtx, ig.Handle)
-		if err == nil && enriched != nil && enriched.Followers != "" {
-			ig.Followers = enriched.Followers
-		}
+		_ = igpkg.EnrichInstagramFollowers(fCtx, ig)
 	}
 
 	out := &InstagramResult{

@@ -300,31 +300,60 @@ func extractTelefonesFromText(text string) []string {
 	return telefones
 }
 
-// isValidName verifica se uma string parece ser um nome válido
+// uiTerms are words that appear in CNPJ-website UI but never in real partner names.
+var uiTerms = map[string]bool{
+	"responde": true, "jurídica": true, "juridica": true, "eletrônico": true,
+	"eletronico": true, "requerimento": true, "consulta": true, "notícias": true,
+	"noticias": true, "inforsystem": true, "natureza": true, "negócios": true,
+	"negocios": true, "contador": true, "tecnologia": true, "holding": true,
+	"investimentos": true, "brasil": true, "neste": true, "nossa": true,
+	"dados": true, "nome": true, "acbs": true,
+}
+
+// isValidName verifica se uma string parece ser um nome válido de sócio.
+// Aceita tanto nomes em CAIXA ALTA (padrão Receita Federal) quanto Title Case.
 func isValidName(name string) bool {
-	// Deve ter pelo menos 2 palavras
 	words := strings.Fields(name)
-	if len(words) < 2 {
+	if len(words) < 2 || len(words) > 8 {
+		return false
+	}
+	if len(name) > 100 {
 		return false
 	}
 
-	// Não deve ter números
-	if regexp.MustCompile(`\d`).MatchString(name) {
+	// Deve ter apenas letras, espaços e caracteres acentuados
+	if regexp.MustCompile(`[\d@#/\\|<>{}\[\]_=+*&^%$!~]`).MatchString(name) {
 		return false
 	}
 
-	// Não deve ter palavras muito curtas (< 2 letras) exceto preposições comuns
-	preposicoes := map[string]bool{"de": true, "da": true, "do": true, "e": true}
-	for _, word := range words {
-		if len(word) < 2 && !preposicoes[strings.ToLower(word)] {
+	// Rejeita se qualquer palavra seja um termo de UI conhecido
+	for _, w := range words {
+		if uiTerms[strings.ToLower(w)] {
 			return false
 		}
 	}
 
-	// Não deve ter palavras em caixa alta completa (exceto siglas de 2-3 letras)
+	// Aceita nomes completamente em CAIXA ALTA (formato Receita Federal)
+	allUpper := true
+	for _, w := range words {
+		// Pequenas preposições podem ser minúsculas
+		if w == strings.ToLower(w) {
+			allUpper = false
+			break
+		}
+	}
+	if allUpper {
+		return true
+	}
+
+	// Aceita nomes em Title Case (primeira letra maiúscula)
+	preposicoes := map[string]bool{"de": true, "da": true, "do": true, "e": true, "dos": true, "das": true}
 	for _, word := range words {
-		if len(word) > 3 && word == strings.ToUpper(word) {
-			return false
+		if preposicoes[strings.ToLower(word)] {
+			continue
+		}
+		if len(word) > 0 && word[0] >= 'a' && word[0] <= 'z' {
+			return false // word starts lowercase → not Title Case
 		}
 	}
 

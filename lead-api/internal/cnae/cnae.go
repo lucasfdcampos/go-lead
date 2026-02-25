@@ -207,7 +207,7 @@ func QueryCompatibleCodes(ctx context.Context, query string, mc *mongo.Client) [
 		ors = append(ors, bson.M{"descricao": bson.M{"$regex": kw, "$options": "i"}})
 	}
 
-	coll := mc.Database("leadfinder").Collection("cnaes")
+	coll := mc.Database("lead_api").Collection("cnaes")
 	cursor, err := coll.Find(ctx, bson.M{"$or": ors}, options.Find().SetProjection(bson.M{"codigo": 1}))
 	if err != nil {
 		return nil

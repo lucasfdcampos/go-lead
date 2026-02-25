@@ -349,24 +349,14 @@ var appLocalCategoryMap = map[string][][2]string{
 	"fotografia":        {{"eventos", "fotografia"}, {"servicos", "fotografia"}},
 }
 
-// appLocalBuildAllURLs gera todas as URLs: subcategorias × páginas.
+// appLocalBuildAllURLs gera todas as URLs para o AppLocal.
+// Formato: /empresas/{querySlug}/{citySlug}/{stateSlug}
+// Ex: https://applocal.com.br/empresas/loja-de-roupas/arapongas/pr
 func appLocalBuildAllURLs(base, citySlug, stateSlug, querySlug string, maxPages int) []string {
-	query := strings.ReplaceAll(querySlug, "-", " ")
-	pairs, ok := appLocalCategoryMap[query]
-	if !ok {
-		pairs = [][2]string{
-			{querySlug, querySlug},
-			{querySlug + "s", querySlug},
-		}
-	}
-
 	var urls []string
-	for _, pair := range pairs {
-		cat, sub := pair[0], pair[1]
-		urls = append(urls, fmt.Sprintf("%s/%s-%s/%s/%s/", base, citySlug, stateSlug, cat, sub))
-		for p := 2; p <= maxPages; p++ {
-			urls = append(urls, fmt.Sprintf("%s/%s-%s/%s/%s/pagina/%d/", base, citySlug, stateSlug, cat, sub, p))
-		}
+	urls = append(urls, fmt.Sprintf("%s/%s/%s/%s", base, querySlug, citySlug, stateSlug))
+	for p := 2; p <= maxPages; p++ {
+		urls = append(urls, fmt.Sprintf("%s/%s/%s/%s/pagina/%d", base, querySlug, citySlug, stateSlug, p))
 	}
 	return urls
 }

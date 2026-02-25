@@ -169,26 +169,6 @@ func (c *CNPJBizScraper) extractSocios(doc *goquery.Document) []string {
 		}
 	})
 
-	// Busca alternativa em divs ou sections
-	if len(socios) == 0 {
-		doc.Find("*").Each(func(i int, s *goquery.Selection) {
-			text := strings.ToLower(s.Text())
-			if strings.Contains(text, "quadro de sócios") || strings.Contains(text, "qsa") {
-				// Busca próximos elementos que podem conter nomes
-				s.NextAll().Each(func(j int, next *goquery.Selection) {
-					nome := strings.TrimSpace(next.Text())
-					if nome != "" && !seen[nome] && len(nome) > 3 && len(nome) < 100 {
-						// Verifica se parece um nome (tem letras)
-						if regexp.MustCompile(`[A-Za-z]{3,}`).MatchString(nome) {
-							socios = append(socios, nome)
-							seen[nome] = true
-						}
-					}
-				})
-			}
-		})
-	}
-
 	return socios
 }
 

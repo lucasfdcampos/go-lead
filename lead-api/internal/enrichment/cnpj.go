@@ -83,11 +83,14 @@ func EnrichCNPJ(
 
 	// Live search
 	searchQuery := fmt.Sprintf("%s %s %s cnpj", name, city, state)
-	tctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	tctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	searchers := []cnpjpkg.Searcher{
 		cnpjpkg.NewDuckDuckGoSearcher(),
+		cnpjpkg.NewSearXNGSearcher(),
+		cnpjpkg.NewMojeekSearcher(),
+		cnpjpkg.NewSwisscowsSearcher(),
 		cnpjpkg.NewCNPJSearcher(),
 	}
 

@@ -282,3 +282,156 @@ func EnrichFromReceitaWS(ctx context.Context, cnpj *CNPJ) error {
 	}
 	return nil
 }
+
+// ─── SearXNG CNPJ Searcher ────────────────────────────────────────────────────
+
+// searxngCNPJInstances lists public SearXNG instances to try in order.
+var searxngCNPJInstances = []string{
+	"https://searx.be",
+	"https://search.bus-hit.me",
+	"https://paulgo.io",
+}
+
+// SearXNGSearcher searches for a CNPJ using SearXNG public instances.
+type SearXNGSearcher struct{}
+
+func NewSearXNGSearcher() *SearXNGSearcher { return &SearXNGSearcher{} }
+func (s *SearXNGSearcher) Name() string    { return "SearXNG" }
+
+func (s *SearXNGSearcher) Search(ctx context.Context, query string) (*CNPJ, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	for _, instance := range searxngCNPJInstances {
+		searchURL := fmt.Sprintf("%s/search?q=%s&language=pt-BR&format=html", instance, url.QueryEscape(query))
+
+		req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")
+		req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9")
+
+		time.Sleep(800 * time.Millisecond)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+
+		doc, err := goquery.NewDocumentFromReader(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+
+		var sb strings.Builder
+		doc.Find(".result-content, .result-text, .result__snippet, p").Each(func(_ int, sel *goquery.Selection) {
+			sb.WriteString(sel.Text())
+			sb.WriteString(" ")
+		})
+
+		if cnpj := ExtractCNPJ(sb.String()); cnpj != nil {
+			return cnpj, nil
+		}
+	}
+
+	return nil, fmt.Errorf("CNPJ não encontrado no SearXNG")
+}
+
+// ─── Mojeek CNPJ Searcher ─────────────────────────────────────────────────────
+
+// MojeekSearcher searches for a CNPJ using Mojeek.
+type MojeekSearcher struct{}
+
+func NewMojeekSearcher() *MojeekSearcher { return &MojeekSearcher{} }
+func (m *MojeekSearcher) Name() string   { return "Mojeek" }
+
+func (m *MojeekSearcher) Search(ctx context.Context, query string) (*CNPJ, error) {
+	searchURL := "https://www.mojeek.com/search?q=" + url.QueryEscape(query)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("mojeek: request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9")
+
+	time.Sleep(800 * time.Millisecond)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("mojeek: do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("mojeek: status %d", resp.StatusCode)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("mojeek: parse: %w", err)
+	}
+
+	var sb strings.Builder
+	doc.Find(".result-text, .result__body, p").Each(func(_ int, sel *goquery.Selection) {
+		sb.WriteString(sel.Text())
+		sb.WriteString(" ")
+	})
+
+	if cnpj := ExtractCNPJ(sb.String()); cnpj != nil {
+		return cnpj, nil
+	}
+
+	return nil, fmt.Errorf("CNPJ não encontrado no Mojeek")
+}
+
+// ─── Swisscows CNPJ Searcher ──────────────────────────────────────────────────
+
+// SwisscowsSearcher searches for a CNPJ using Swisscows.
+type SwisscowsSearcher struct{}
+
+func NewSwisscowsSearcher() *SwisscowsSearcher { return &SwisscowsSearcher{} }
+func (s *SwisscowsSearcher) Name() string      { return "Swisscows" }
+
+func (s *SwisscowsSearcher) Search(ctx context.Context, query string) (*CNPJ, error) {
+	searchURL := "https://swisscows.com/web?query=" + url.QueryEscape(query) + "&region=pt-BR"
+
+	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("swisscows: request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9")
+
+	time.Sleep(1 * time.Second)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("swisscows: do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("swisscows: status %d", resp.StatusCode)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("swisscows: parse: %w", err)
+	}
+
+	var sb strings.Builder
+	doc.Find(".web-results .item-body, .result-item, p").Each(func(_ int, sel *goquery.Selection) {
+		sb.WriteString(sel.Text())
+		sb.WriteString(" ")
+	})
+
+	if cnpj := ExtractCNPJ(sb.String()); cnpj != nil {
+		return cnpj, nil
+	}
+
+	return nil, fmt.Errorf("CNPJ não encontrado no Swisscows")
+}

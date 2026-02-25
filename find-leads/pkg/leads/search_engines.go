@@ -171,6 +171,64 @@ func (y *YandexLeadScraper) Search(ctx context.Context, query, location string) 
 		".Organic-Text, .OrganicText, .ExtendedText, .serp-item__text", city, state, "Yandex", 2000*time.Millisecond)
 }
 
+// ─── SearXNG ──────────────────────────────────────────────────────────────────
+
+// searxngInstances lists public SearXNG instances to try in order.
+var searxngInstances = []string{
+	"https://searx.be",
+	"https://search.bus-hit.me",
+	"https://paulgo.io",
+}
+
+type SearXNGLeadScraper struct{}
+
+func NewSearXNGLeadScraper() *SearXNGLeadScraper { return &SearXNGLeadScraper{} }
+func (s *SearXNGLeadScraper) Name() string       { return "SearXNG" }
+
+func (s *SearXNGLeadScraper) Search(ctx context.Context, query, location string) ([]*Lead, error) {
+	city, state := ParseLocation(location)
+	q := fmt.Sprintf(`"%s" "%s" telefone`, query, city)
+	for _, instance := range searxngInstances {
+		searchURL := fmt.Sprintf("%s/search?q=%s&language=pt-BR&format=html", instance, url.QueryEscape(q))
+		leads, err := searchEngineLeads(ctx, searchURL,
+			".result-content, .result_header, .result-description", city, state, "SearXNG", 1500*time.Millisecond)
+		if err == nil && len(leads) > 0 {
+			return leads, nil
+		}
+	}
+	return nil, fmt.Errorf("SearXNG: no results from any instance")
+}
+
+// ─── Mojeek ───────────────────────────────────────────────────────────────────
+
+type MojeekLeadScraper struct{}
+
+func NewMojeekLeadScraper() *MojeekLeadScraper { return &MojeekLeadScraper{} }
+func (m *MojeekLeadScraper) Name() string      { return "Mojeek" }
+
+func (m *MojeekLeadScraper) Search(ctx context.Context, query, location string) ([]*Lead, error) {
+	city, state := ParseLocation(location)
+	q := fmt.Sprintf(`"%s" "%s" telefone`, query, city)
+	return searchEngineLeads(ctx,
+		"https://www.mojeek.com/search?q="+url.QueryEscape(q),
+		".result-text, .result__body, .result-wrap p", city, state, "Mojeek", 1500*time.Millisecond)
+}
+
+// ─── Swisscows ────────────────────────────────────────────────────────────────
+
+type SwisscowsLeadScraper struct{}
+
+func NewSwisscowsLeadScraper() *SwisscowsLeadScraper { return &SwisscowsLeadScraper{} }
+func (s *SwisscowsLeadScraper) Name() string         { return "Swisscows" }
+
+func (s *SwisscowsLeadScraper) Search(ctx context.Context, query, location string) ([]*Lead, error) {
+	city, state := ParseLocation(location)
+	q := fmt.Sprintf(`%s %s telefone Brasil`, query, city)
+	return searchEngineLeads(ctx,
+		"https://swisscows.com/web?query="+url.QueryEscape(q)+"&region=pt-BR",
+		".web-results .item-body, .result-item .description", city, state, "Swisscows", 2000*time.Millisecond)
+}
+
 // ─── Helper genérico ─────────────────────────────────────────────────────────
 
 func searchEngineLeads(ctx context.Context, searchURL, selector, city, state, source string, delay time.Duration) ([]*Lead, error) {
