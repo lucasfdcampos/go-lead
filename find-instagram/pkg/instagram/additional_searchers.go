@@ -250,49 +250,135 @@ func (i *InstagramProfileChecker) Name() string {
 }
 
 func (i *InstagramProfileChecker) Search(ctx context.Context, query string) (*Instagram, error) {
-	// Gera possíveis handles baseado na query
-	possibleHandles := i.generatePossibleHandles(query)
+	possibleHandles, businessWords := i.generatePossibleHandles(query)
 
-	// Tenta cada handle
+	type candidate struct {
+		handle    string
+		score     int
+		followers int
+	}
+	var matches []candidate
+
 	for _, handle := range possibleHandles {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 
-		if i.checkProfileExists(ctx, handle) {
-			return NewInstagram(handle), nil
+		ok, ogContent := i.checkProfileExists(ctx, handle)
+		if ok {
+			// Extrai o display name do og:title: 'DisplayName (@handle) • ...'
+			// Pontua pelo número de palavras do negócio presentes no display name.
+			// Usar apenas o display name (não URL/handle) evita falso-positivo
+			// onde os componentes do handle aparecem no og:url mas não no nome real.
+			score := 0
+			displayName := extractOGDisplayName(ogContent)
+			for _, w := range businessWords {
+				if strings.Contains(displayName, w) {
+					score++
+				}
+			}
+			followers := extractFollowerCount(ogContent)
+			matches = append(matches, candidate{handle, score, followers})
 		}
 
-		// Delay curto entre verificações (respeita rate limit sem ser lento demais)
 		time.Sleep(300 * time.Millisecond)
 	}
 
-	return nil, fmt.Errorf("nenhum handle válido encontrado")
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("nenhum handle válido encontrado")
+	}
+
+	// Retorna o candidato com maior pontuação (mais palavras do negócio no display name).
+	// Em caso de empate de pontuação, prefere o com mais seguidores (conta mais ativa).
+	best := matches[0]
+	for _, c := range matches[1:] {
+		if c.score > best.score || (c.score == best.score && c.followers > best.followers) {
+			best = c
+		}
+	}
+
+	return NewInstagram(best.handle), nil
 }
 
-func (i *InstagramProfileChecker) generatePossibleHandles(query string) []string {
-	var handles []string
+// extractOGDisplayName extrai o nome de exibição do og:title do Instagram.
+// Formato: 'og:title" content="DisplayName (@handle) • Instagram profile"'
+// Retorna o display name em minúsculas, ou string vazia se não encontrado.
+func extractOGDisplayName(ogContent string) string {
+	const marker = `og:title" content="`
+	idx := strings.Index(ogContent, marker)
+	if idx == -1 {
+		return ""
+	}
+	rest := ogContent[idx+len(marker):]
+	end := strings.Index(rest, `"`)
+	if end == -1 {
+		return ""
+	}
+	title := rest[:end] // "DisplayName (@handle) • Instagram profile"
+	// Remove tudo a partir do "@" — queremos só o display name
+	if atIdx := strings.Index(title, " ("); atIdx != -1 {
+		title = title[:atIdx]
+	}
+	return strings.ToLower(title)
+}
+
+// extractFollowerCount extrai a contagem de seguidores do og:description.
+// Formato: "4,575 Followers, 134 Following, 193 Posts - See Instagram..."
+// Retorna 0 se não encontrado ou em caso de erro.
+func extractFollowerCount(ogContent string) int {
+	const marker = `og:description" content="`
+	idx := strings.Index(ogContent, marker)
+	if idx == -1 {
+		return 0
+	}
+	rest := ogContent[idx+len(marker):]
+	end := strings.Index(rest, `"`)
+	if end == -1 {
+		return 0
+	}
+	desc := rest[:end] // "4,575 Followers, 134 Following, 193 Posts - ..."
+	// Extrai o número antes de " Followers"
+	followerIdx := strings.Index(strings.ToLower(desc), " followers")
+	if followerIdx == -1 {
+		return 0
+	}
+	numStr := desc[:followerIdx]
+	// Remove vírgulas/pontos de milhares e converte
+	numStr = strings.ReplaceAll(numStr, ",", "")
+	numStr = strings.ReplaceAll(numStr, ".", "")
+	numStr = strings.TrimSpace(numStr)
+	// Pega apenas os dígitos finais (pode ter texto antes do número)
+	i := len(numStr) - 1
+	for i >= 0 && numStr[i] >= '0' && numStr[i] <= '9' {
+		i--
+	}
+	numStr = numStr[i+1:]
+	if numStr == "" {
+		return 0
+	}
+	n := 0
+	for _, c := range numStr {
+		if c >= '0' && c <= '9' {
+			n = n*10 + int(c-'0')
+		}
+	}
+	return n
+}
+
+func (i *InstagramProfileChecker) generatePossibleHandles(query string) (handles []string, businessWords []string) {
 	seen := make(map[string]bool)
 
-	// Normaliza query
-	query = strings.ToLower(query)
-	query = strings.TrimSpace(query)
+	query = strings.ToLower(strings.TrimSpace(query))
 
-	// Remove palavras comuns, siglas de estados brasileiros e outros ruídos.
-	// Mantém no máximo 3 palavras significativas para gerar handles mais precisos.
 	words := strings.Fields(query)
 	var filtered []string
 	stopWords := map[string]bool{
-		// Redes sociais / termos genéricos
 		"instagram": true, "ig": true, "perfil": true, "profile": true,
 		"oficial": true, "official": true,
-		// Artigos / preposições portuguesas
 		"de": true, "da": true, "do": true, "das": true, "dos": true,
 		"em": true, "na": true, "no": true, "nas": true, "nos": true,
 		"e": true, "a": true, "o": true, "as": true, "os": true,
-		// Termos jurídicos de empresas
 		"ltda": true, "eireli": true, "mei": true, "sa": true, "s.a": true,
-		// Estados brasileiros (siglas de 2 letras ficam fora via len ≤ 2)
 		"ac": true, "al": true, "ap": true, "am": true, "ba": true,
 		"ce": true, "df": true, "es": true, "go": true, "ma": true,
 		"mt": true, "ms": true, "mg": true, "pa": true, "pb": true,
@@ -301,28 +387,45 @@ func (i *InstagramProfileChecker) generatePossibleHandles(query string) []string
 		"se": true, "to": true,
 	}
 
+	// Palavras que indicam tipo de negócio — não são cidade, fazem parte do nome
+	businessTypeWords := map[string]bool{
+		"academia": true, "restaurante": true, "loja": true, "salao": true,
+		"salon": true, "clinica": true, "studio": true, "estudio": true,
+		"mercado": true, "farmacia": true, "escola": true, "colegio": true,
+		"hospital": true, "oficina": true, "barbearia": true, "pet": true,
+		"shop": true, "store": true, "fitness": true, "gym": true,
+		"estetica": true, "moda": true, "boutique": true, "sorveteria": true,
+		"padaria": true, "acougue": true, "auto": true, "motos": true,
+		"veiculos": true, "imoveis": true, "construcao": true,
+	}
+
 	for _, word := range words {
-		// Ignora palavras com 2 ou menos caracteres (siglas, preposições)
 		if len(word) <= 2 {
 			continue
 		}
 		if !stopWords[word] {
 			filtered = append(filtered, word)
 		}
-		// Limita a 3 palavras significativas para evitar nomes de cidades
-		// como parte do handle (ex: "academiaatom", não "academiaatomarapongas")
 		if len(filtered) >= 3 {
 			break
 		}
 	}
 
 	if len(filtered) == 0 {
-		return handles
+		return
 	}
 
-	// A ordem importa: candidatos mais prováveis primeiro para respeitar o timeout.
-	// Para "Academia Atom Arapongas" → filtered = ["academia","atom","arapongas"]
-	// O handle mais provável é "academiaatom" (as duas primeiras palavras).
+	// Palavras do negócio usadas para pontuação de candidatos (no máximo 2).
+	// A terceira palavra filtrada costuma ser a cidade e NÃO entra nos candidatos.
+	// EXCEÇÃO: se for uma palavra de tipo de negócio (ex: "academia"), ela faz
+	// parte do nome e também gera combinações de 3 palavras.
+	thirdIsBusinessType := len(filtered) == 3 && businessTypeWords[filtered[2]]
+	businessWords = filtered[:min(2, len(filtered))]
+	if len(filtered) == 3 && !thirdIsBusinessType {
+		// 3ª palavra é cidade — usa apenas as 2 primeiras para gerar candidatos
+		filtered = filtered[:2]
+	}
+
 	addHandle := func(h string) {
 		h = strings.ToLower(h)
 		if IsValidHandle(h) && !seen[h] {
@@ -331,44 +434,54 @@ func (i *InstagramProfileChecker) generatePossibleHandles(query string) []string
 		}
 	}
 
+	w0, w1 := filtered[0], ""
 	if len(filtered) >= 2 {
-		// Prioridade 1: Primeiras duas palavras juntas (ex: "academiaatom")
-		addHandle(strings.Join(filtered[:2], ""))
-		// Prioridade 2: Primeiras duas com underscore (ex: "academia_atom")
-		addHandle(strings.Join(filtered[:2], "_"))
-		// Prioridade 3: Primeiras duas com ponto (ex: "academia.atom")
-		addHandle(strings.Join(filtered[:2], "."))
+		w1 = filtered[1]
 	}
-
+	w2 := ""
 	if len(filtered) >= 3 {
-		// Prioridade 4: Três palavras juntas (ex: "academiaatomarapongas")
-		addHandle(strings.Join(filtered[:3], ""))
-		// Prioridade 5: Três palavras com underscore
-		addHandle(strings.Join(filtered[:3], "_"))
+		w2 = filtered[2]
 	}
 
-	// Prioridade 6: Apenas a primeira palavra (ex: "academia")
-	// Só é usada quando a empresa tem nome de uma única palavra significativa
-	// para evitar falsos positivos em contas populares como @energy, @academia.
-	if len(filtered) == 1 {
-		addHandle(filtered[0])
+	if w1 != "" {
+		// Ordem direta: palavraA + palavraB
+		addHandle(w0 + w1)       // "actionacademia"
+		addHandle(w0 + "_" + w1) // "action_academia"
+		addHandle(w0 + "." + w1) // "action.academia"
+		// Ordem inversa: palavraB + palavraA (frequente em nomes de Instagram)
+		addHandle(w1 + w0)       // "academiaaction"
+		addHandle(w1 + "_" + w0) // "academia_action"
+		addHandle(w1 + "." + w0) // "academia.action"  ← ex: academia.action
 	}
 
-	return handles
+	// Combinações de 3 palavras quando a 3ª palavra é tipo de negócio
+	// Ex: "MVB FIT ACADEMIA" → gera "mvbfitacademia"
+	if w1 != "" && w2 != "" {
+		addHandle(w0 + w1 + w2)              // "mvbfitacademia" ← soluciona MVB FIT
+		addHandle(w0 + "." + w1 + "." + w2) // "mvb.fit.academia"
+		addHandle(w0 + w2 + w1)              // "mvbacademiafit"
+		addHandle(w2 + w0 + w1)              // "academiamvbfit"
+	}
+
+	// Apenas a primeira palavra — só para nomes de uma única palavra significativa
+	if w1 == "" {
+		addHandle(w0)
+	}
+
+	return
 }
 
-func (i *InstagramProfileChecker) checkProfileExists(ctx context.Context, handle string) bool {
+func (i *InstagramProfileChecker) checkProfileExists(ctx context.Context, handle string) (bool, string) {
 	// Usa User-Agent de bot de redes sociais (Facebot) para obter Open Graph tags.
 	// Perfis válidos retornam: <meta property="og:type" content="profile" />
-	// Perfis inválidos/inexistentes não retornam essa tag.
+	// O conteúdo OG (title + description) é retornado para validação por cidade.
 	profileURL := fmt.Sprintf("https://www.instagram.com/%s/", handle)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", profileURL, nil)
 	if err != nil {
-		return false
+		return false, ""
 	}
 
-	// Instagram serve Open Graph completo para crawlers de redes sociais
 	req.Header.Set("User-Agent", "Facebot Twitterbot/1.0")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml")
 
@@ -376,19 +489,21 @@ func (i *InstagramProfileChecker) checkProfileExists(ctx context.Context, handle
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return false
+		return false, ""
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return false
+		return false, ""
 	}
 
-	// Lê até 16KB para garantir que os meta tags do <head> estejam incluídos
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 16384))
+	content := string(body)
 
-	// Perfil válido tem og:type = "profile"; página 404 / not available não tem
-	return strings.Contains(string(body), `og:type" content="profile"`)
+	if !strings.Contains(content, `og:type" content="profile"`) {
+		return false, ""
+	}
+	return true, content
 }
 
 // BingSearcher busca usando Bing HTML
