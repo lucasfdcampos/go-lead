@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -267,68 +268,62 @@ func extractFollowersFromText(text string) string {
 
 // EnrichInstagramFollowers busca dados de seguidores para um Instagram já encontrado
 // Sistema de fallback em cascata com 12 fontes:
-// 1. InstaStoriesViewer (primária)
-// 2. StoryNavigation (fallback 1)
-// 3. Imginn (fallback 2)
-// 4. StoriesDown (fallback 3)
-// 5. Picuki (fallback 4)
-// 6. Greatfon (fallback 5)
-// 7. Instalk (fallback 6)
-// 8. DuckDuckGo Search (fallback 7)
-// 9. Bing Search (fallback 8)
-// 10. Brave Search (fallback 9)
-// 11. Yandex Search (fallback 10)
-// 12. Instagram Direct (fallback 11)
+// EnrichInstagramFollowers fetches the follower count for a given Instagram
+// handle by running all scrapers concurrently and accepting the first valid
+// non-zero result. Dead sources (StoriesDown, Instalk) have been removed.
 func EnrichInstagramFollowers(ctx context.Context, instagram *Instagram) error {
 	if instagram == nil || instagram.Handle == "" {
 		return fmt.Errorf("instagram inválido")
 	}
-
-	// Já tem seguidores?
 	if instagram.Followers != "" {
 		return nil
 	}
 
-	// Lista de scrapers em ordem de prioridade
-	scrapers := []struct {
-		name    string
-		scraper interface {
-			Search(context.Context, string) (*Instagram, error)
-			Name() string
-		}
-	}{
-		{"InstaStoriesViewer", NewInstaStoriesViewerScraper()},
-		{"StoryNavigation", NewStoryNavigationScraper()},
-		{"Imginn", NewImginnScraper()},
-		{"StoriesDown", NewStoriesDownScraper()},
-		{"Picuki", NewPicukiScraper()},
-		{"Greatfon", NewGreatfonScraper()},
-		{"Instalk", NewInstalkScraper()},
-		{"DuckDuckGo", NewDuckDuckGoFollowersScraper()},
-		{"Bing", NewBingSearchScraper()},
-		{"Brave", NewBraveSearchFollowersScraper()},
-		{"Yandex", NewYandexSearchFollowersScraper()},
-		{"InstagramDirect", NewInstagramDirectScraper()},
+	type followerSrc interface {
+		Search(context.Context, string) (*Instagram, error)
+		Name() string
 	}
 
-	var lastErr error
-	for i, s := range scrapers {
-		if i > 0 {
-			fmt.Printf("⚠️  %s falhou (%v), tentando %s...\n", scrapers[i-1].name, lastErr, s.name)
-		}
+	scrapers := []followerSrc{
+		NewInstaStoriesViewerScraper(),
+		NewStoryNavigationScraper(),
+		NewImginnScraper(),
+		NewPicukiScraper(),
+		NewGreatfonScraper(),
+		NewDuckDuckGoFollowersScraper(),
+		NewBingSearchScraper(),
+		NewBraveSearchFollowersScraper(),
+		NewYandexSearchFollowersScraper(),
+		NewInstagramDirectScraper(),
+	}
 
-		result, err := s.scraper.Search(ctx, instagram.Handle)
-		if err == nil && result.Followers != "" && result.Followers != "0" {
-			instagram.Followers = result.Followers
-			if i > 0 {
-				fmt.Printf("✅ Sucesso com fallback %s\n", s.name)
+	type win struct{ followers string }
+	ch := make(chan win, len(scrapers))
+	tctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	for _, sc := range scrapers {
+		wg.Add(1)
+		go func(s followerSrc) {
+			defer wg.Done()
+			r, err := s.Search(tctx, instagram.Handle)
+			if err == nil && r != nil && r.Followers != "" && r.Followers != "0" {
+				select {
+				case ch <- win{r.Followers}:
+				default:
+				}
 			}
-			return nil
-		}
-		lastErr = err
+		}(sc)
 	}
+	go func() { wg.Wait(); close(ch) }()
 
-	return fmt.Errorf("todas as 12 fontes falharam para %s", instagram.Handle)
+	if w, ok := <-ch; ok {
+		cancel()
+		instagram.Followers = w.followers
+		return nil
+	}
+	return fmt.Errorf("todas as fontes falharam para %s", instagram.Handle)
 }
 
 func max(a, b int) int {

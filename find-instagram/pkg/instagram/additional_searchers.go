@@ -3,6 +3,7 @@ package instagram
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -23,11 +24,8 @@ func (d *DuckDuckGoSearcher) Name() string {
 }
 
 func (d *DuckDuckGoSearcher) Search(ctx context.Context, query string) (*Instagram, error) {
-	// Adiciona "instagram" à query se não estiver presente
-	searchQuery := query
-	if !strings.Contains(strings.ToLower(query), "instagram") {
-		searchQuery = query + " instagram"
-	}
+	// DuckDuckGo bloqueia site: operator em IPs de servidor; usa sufixo "instagram"
+	searchQuery := query + " instagram"
 
 	// Monta URL de busca
 	searchURL := fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", url.QueryEscape(searchQuery))
@@ -66,7 +64,7 @@ func (d *DuckDuckGoSearcher) Search(ctx context.Context, query string) (*Instagr
 	// Busca por handles no conteúdo
 	var foundHandle *Instagram
 
-	// Procura em links e textos
+	// Procura em links — descodifica redirects do DuckDuckGo (/l/?uddg=URL)
 	doc.Find("a").Each(func(i int, s *goquery.Selection) {
 		if foundHandle != nil {
 			return
@@ -74,7 +72,12 @@ func (d *DuckDuckGoSearcher) Search(ctx context.Context, query string) (*Instagr
 
 		href, exists := s.Attr("href")
 		if exists {
-			// Verifica se é link do Instagram
+			// Decode DuckDuckGo redirect: /l/?uddg=https%3A%2F%2Finstagram.com%2Fhandle
+			if idx := strings.Index(href, "uddg="); idx != -1 {
+				if decoded, err := url.QueryUnescape(href[idx+5:]); err == nil {
+					href = decoded
+				}
+			}
 			if strings.Contains(href, "instagram.com/") {
 				handles := ExtractAllHandles(href)
 				if len(handles) > 0 {
@@ -84,9 +87,9 @@ func (d *DuckDuckGoSearcher) Search(ctx context.Context, query string) (*Instagr
 			}
 		}
 
-		// Verifica texto do link
+		// Título frequentemente mostra "Business (@handle) • Instagram"
 		text := s.Text()
-		if strings.HasPrefix(text, "@") {
+		if strings.Contains(strings.ToLower(text), "instagram") || strings.Contains(text, "@") {
 			handles := ExtractAllHandles(text)
 			if len(handles) > 0 {
 				foundHandle = handles[0]
@@ -94,6 +97,22 @@ func (d *DuckDuckGoSearcher) Search(ctx context.Context, query string) (*Instagr
 			}
 		}
 	})
+
+	// URL exibida pelo DuckDuckGo (e.g. "instagram.com/academiaatom")
+	if foundHandle == nil {
+		doc.Find(".result__url, .result__extras__url, .result__extras").Each(func(_ int, s *goquery.Selection) {
+			if foundHandle != nil {
+				return
+			}
+			urlText := strings.TrimSpace(s.Text())
+			if strings.Contains(urlText, "instagram.com/") {
+				handles := ExtractAllHandles("https://" + strings.TrimPrefix(urlText, "https://"))
+				if len(handles) > 0 {
+					foundHandle = handles[0]
+				}
+			}
+		})
+	}
 
 	// Busca no snippet de resultados
 	if foundHandle == nil {
@@ -143,11 +162,8 @@ func (g *GoogleSearcher) Name() string {
 }
 
 func (g *GoogleSearcher) Search(ctx context.Context, query string) (*Instagram, error) {
-	// Adiciona "instagram" à query
-	searchQuery := query
-	if !strings.Contains(strings.ToLower(query), "instagram") {
-		searchQuery = query + " instagram"
-	}
+	// Usa site:instagram.com para forçar resultados apenas do Instagram
+	searchQuery := instagramSiteQuery(query)
 
 	// Monta URL de busca
 	searchURL := fmt.Sprintf("https://www.google.com/search?q=%s", url.QueryEscape(searchQuery))
@@ -247,8 +263,8 @@ func (i *InstagramProfileChecker) Search(ctx context.Context, query string) (*In
 			return NewInstagram(handle), nil
 		}
 
-		// Delay entre verificações
-		time.Sleep(1 * time.Second)
+		// Delay curto entre verificações (respeita rate limit sem ser lento demais)
+		time.Sleep(300 * time.Millisecond)
 	}
 
 	return nil, fmt.Errorf("nenhum handle válido encontrado")
@@ -262,17 +278,41 @@ func (i *InstagramProfileChecker) generatePossibleHandles(query string) []string
 	query = strings.ToLower(query)
 	query = strings.TrimSpace(query)
 
-	// Remove palavras comuns
+	// Remove palavras comuns, siglas de estados brasileiros e outros ruídos.
+	// Mantém no máximo 3 palavras significativas para gerar handles mais precisos.
 	words := strings.Fields(query)
 	var filtered []string
 	stopWords := map[string]bool{
+		// Redes sociais / termos genéricos
 		"instagram": true, "ig": true, "perfil": true, "profile": true,
-		"oficial": true, "official": true, "de": true, "da": true, "do": true,
+		"oficial": true, "official": true,
+		// Artigos / preposições portuguesas
+		"de": true, "da": true, "do": true, "das": true, "dos": true,
+		"em": true, "na": true, "no": true, "nas": true, "nos": true,
+		"e": true, "a": true, "o": true, "as": true, "os": true,
+		// Termos jurídicos de empresas
+		"ltda": true, "eireli": true, "mei": true, "sa": true, "s.a": true,
+		// Estados brasileiros (siglas de 2 letras ficam fora via len ≤ 2)
+		"ac": true, "al": true, "ap": true, "am": true, "ba": true,
+		"ce": true, "df": true, "es": true, "go": true, "ma": true,
+		"mt": true, "ms": true, "mg": true, "pa": true, "pb": true,
+		"pr": true, "pe": true, "pi": true, "rj": true, "rn": true,
+		"rs": true, "ro": true, "rr": true, "sc": true, "sp": true,
+		"se": true, "to": true,
 	}
 
 	for _, word := range words {
+		// Ignora palavras com 2 ou menos caracteres (siglas, preposições)
+		if len(word) <= 2 {
+			continue
+		}
 		if !stopWords[word] {
 			filtered = append(filtered, word)
+		}
+		// Limita a 3 palavras significativas para evitar nomes de cidades
+		// como parte do handle (ex: "academiaatom", não "academiaatomarapongas")
+		if len(filtered) >= 3 {
+			break
 		}
 	}
 
@@ -280,72 +320,59 @@ func (i *InstagramProfileChecker) generatePossibleHandles(query string) []string
 		return handles
 	}
 
-	// Estratégia 1: Tudo junto sem espaços
-	handle1 := strings.Join(filtered, "")
-	if IsValidHandle(handle1) && !seen[handle1] {
-		handles = append(handles, handle1)
-		seen[handle1] = true
-	}
-
-	// Estratégia 2: Com underscores
-	handle2 := strings.Join(filtered, "_")
-	if IsValidHandle(handle2) && !seen[handle2] {
-		handles = append(handles, handle2)
-		seen[handle2] = true
-	}
-
-	// Estratégia 3: Com pontos
-	handle3 := strings.Join(filtered, ".")
-	if IsValidHandle(handle3) && !seen[handle3] {
-		handles = append(handles, handle3)
-		seen[handle3] = true
-	}
-
-	// Estratégia 4: Apenas primeira palavra
-	if len(filtered) > 0 {
-		handle4 := filtered[0]
-		if IsValidHandle(handle4) && !seen[handle4] {
-			handles = append(handles, handle4)
-			seen[handle4] = true
+	// A ordem importa: candidatos mais prováveis primeiro para respeitar o timeout.
+	// Para "Academia Atom Arapongas" → filtered = ["academia","atom","arapongas"]
+	// O handle mais provável é "academiaatom" (as duas primeiras palavras).
+	addHandle := func(h string) {
+		h = strings.ToLower(h)
+		if IsValidHandle(h) && !seen[h] {
+			handles = append(handles, h)
+			seen[h] = true
 		}
 	}
 
-	// Estratégia 5: Primeiras duas palavras
 	if len(filtered) >= 2 {
-		handle5 := strings.Join(filtered[:2], "")
-		if IsValidHandle(handle5) && !seen[handle5] {
-			handles = append(handles, handle5)
-			seen[handle5] = true
-		}
+		// Prioridade 1: Primeiras duas palavras juntas (ex: "academiaatom")
+		addHandle(strings.Join(filtered[:2], ""))
+		// Prioridade 2: Primeiras duas com underscore (ex: "academia_atom")
+		addHandle(strings.Join(filtered[:2], "_"))
+		// Prioridade 3: Primeiras duas com ponto (ex: "academia.atom")
+		addHandle(strings.Join(filtered[:2], "."))
+	}
 
-		handle6 := strings.Join(filtered[:2], "_")
-		if IsValidHandle(handle6) && !seen[handle6] {
-			handles = append(handles, handle6)
-			seen[handle6] = true
-		}
+	if len(filtered) >= 3 {
+		// Prioridade 4: Três palavras juntas (ex: "academiaatomarapongas")
+		addHandle(strings.Join(filtered[:3], ""))
+		// Prioridade 5: Três palavras com underscore
+		addHandle(strings.Join(filtered[:3], "_"))
+	}
+
+	// Prioridade 6: Apenas a primeira palavra (ex: "academia")
+	// Só é usada quando a empresa tem nome de uma única palavra significativa
+	// para evitar falsos positivos em contas populares como @energy, @academia.
+	if len(filtered) == 1 {
+		addHandle(filtered[0])
 	}
 
 	return handles
 }
 
 func (i *InstagramProfileChecker) checkProfileExists(ctx context.Context, handle string) bool {
-	// Usa a URL pública do Instagram para verificar se o perfil existe
+	// Usa User-Agent de bot de redes sociais (Facebot) para obter Open Graph tags.
+	// Perfis válidos retornam: <meta property="og:type" content="profile" />
+	// Perfis inválidos/inexistentes não retornam essa tag.
 	profileURL := fmt.Sprintf("https://www.instagram.com/%s/", handle)
 
-	req, err := http.NewRequestWithContext(ctx, "HEAD", profileURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", profileURL, nil)
 	if err != nil {
 		return false
 	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	// Instagram serve Open Graph completo para crawlers de redes sociais
+	req.Header.Set("User-Agent", "Facebot Twitterbot/1.0")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
 
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			// Não segue redirects
-			return http.ErrUseLastResponse
-		},
-	}
+	client := &http.Client{Timeout: 6 * time.Second}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -353,8 +380,15 @@ func (i *InstagramProfileChecker) checkProfileExists(ctx context.Context, handle
 	}
 	defer resp.Body.Close()
 
-	// Se retornar 200 OK, o perfil existe
-	return resp.StatusCode == 200
+	if resp.StatusCode != 200 {
+		return false
+	}
+
+	// Lê até 16KB para garantir que os meta tags do <head> estejam incluídos
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 16384))
+
+	// Perfil válido tem og:type = "profile"; página 404 / not available não tem
+	return strings.Contains(string(body), `og:type" content="profile"`)
 }
 
 // BingSearcher busca usando Bing HTML
@@ -369,10 +403,7 @@ func (b *BingSearcher) Name() string {
 }
 
 func (b *BingSearcher) Search(ctx context.Context, query string) (*Instagram, error) {
-	searchQuery := query
-	if !strings.Contains(strings.ToLower(query), "instagram") {
-		searchQuery = query + " instagram"
-	}
+	searchQuery := instagramSiteQuery(query)
 
 	searchURL := fmt.Sprintf("https://www.bing.com/search?q=%s", url.QueryEscape(searchQuery))
 
@@ -448,10 +479,7 @@ func NewSearXNGSearcher() *SearXNGSearcher { return &SearXNGSearcher{} }
 func (s *SearXNGSearcher) Name() string    { return "SearXNG" }
 
 func (s *SearXNGSearcher) Search(ctx context.Context, query string) (*Instagram, error) {
-	q := query
-	if !strings.Contains(strings.ToLower(query), "instagram") {
-		q = query + " instagram"
-	}
+	q := instagramSiteQuery(query)
 
 	client := &http.Client{Timeout: 15 * time.Second}
 
@@ -520,10 +548,7 @@ func NewMojeekSearcher() *MojeekSearcher { return &MojeekSearcher{} }
 func (m *MojeekSearcher) Name() string   { return "Mojeek" }
 
 func (m *MojeekSearcher) Search(ctx context.Context, query string) (*Instagram, error) {
-	q := query
-	if !strings.Contains(strings.ToLower(query), "instagram") {
-		q = query + " instagram"
-	}
+	q := instagramSiteQuery(query)
 
 	searchURL := "https://www.mojeek.com/search?q=" + url.QueryEscape(q)
 
@@ -593,10 +618,7 @@ func NewSwisscowsSearcher() *SwisscowsSearcher { return &SwisscowsSearcher{} }
 func (s *SwisscowsSearcher) Name() string      { return "Swisscows" }
 
 func (s *SwisscowsSearcher) Search(ctx context.Context, query string) (*Instagram, error) {
-	q := query
-	if !strings.Contains(strings.ToLower(query), "instagram") {
-		q = query + " instagram"
-	}
+	q := instagramSiteQuery(query)
 
 	searchURL := "https://swisscows.com/web?query=" + url.QueryEscape(q) + "&region=pt-BR"
 

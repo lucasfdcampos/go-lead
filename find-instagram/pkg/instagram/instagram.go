@@ -5,6 +5,18 @@ import (
 	"strings"
 )
 
+// reInstagramWord matches the standalone word "instagram" in a query.
+var reInstagramWord = regexp.MustCompile(`(?i)\s*\binstagram\b\s*`)
+
+// instagramSiteQuery converts e.g. "La Femme Arapongas instagram" →
+// "La Femme Arapongas site:instagram.com", so every search engine returns
+// only instagram.com URLs — dramatically improves handle discovery accuracy.
+func instagramSiteQuery(q string) string {
+	q = reInstagramWord.ReplaceAllString(q, " ")
+	q = strings.TrimSpace(q)
+	return q + " site:instagram.com"
+}
+
 // Instagram representa um handle do Instagram
 type Instagram struct {
 	Handle    string // Ex: dimazzomenswear
@@ -62,8 +74,10 @@ func NormalizeHandle(handle string) string {
 }
 
 // blockedHandles contains well-known false-positive handles that belong to
-// search engines, infrastructure services, or other non-business entities.
+// search engines, infrastructure services, reserved Instagram paths, or
+// other non-business entities.
 var blockedHandles = map[string]bool{
+	// Search engines / infra
 	"swisscows.official": true,
 	"swisscows":          true,
 	"mojeek":             true,
@@ -76,13 +90,26 @@ var blockedHandles = map[string]bool{
 	"googleads":          true,
 	"searx":              true,
 	"paulgo.io":          true,
-	"instagram":          true,
-	"meta":               true,
-	"facebook":           true,
-	"twitter":            true,
-	"tiktok":             true,
-	"youtube":            true,
-	"whatsapp":           true,
+	// Social platforms themselves
+	"instagram": true,
+	"meta":      true,
+	"facebook":  true,
+	"twitter":   true,
+	"tiktok":    true,
+	"youtube":   true,
+	"whatsapp":  true,
+	// Reserved Instagram URL paths (never a profile handle)
+	"p":        true,
+	"stories":  true,
+	"reel":     true,
+	"reels":    true,
+	"tv":       true,
+	"explore":  true,
+	"accounts": true,
+	"tags":     true,
+	"direct":   true,
+	"share":    true,
+	"web":      true,
 }
 
 // domainTLDRe matches handles that look like domain names (e.g. lasalle.org.br, site.com).

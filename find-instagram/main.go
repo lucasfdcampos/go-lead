@@ -65,6 +65,7 @@ func main() {
 
 	// Setup searchers
 	searchers := []instagram.Searcher{
+		instagram.NewInstagramProfileChecker(), // geração de handles + check Facebot (mais confiável)
 		instagram.NewDuckDuckGoSearcher(),
 		instagram.NewBingSearcher(),
 	}

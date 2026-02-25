@@ -66,6 +66,7 @@ func EnrichInstagram(
 	defer cancel()
 
 	searchers := []igpkg.Searcher{
+		igpkg.NewInstagramProfileChecker(), // geração de handles + check Facebot (mais confiável)
 		igpkg.NewDuckDuckGoSearcher(),
 		igpkg.NewBingSearcher(),
 		igpkg.NewSearXNGSearcher(),
