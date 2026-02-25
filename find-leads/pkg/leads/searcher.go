@@ -121,3 +121,52 @@ func SearchAll(ctx context.Context, query, location string, searchers ...Searche
 	deduplicated := Deduplicate(allLeads)
 	return deduplicated, results
 }
+// ─── Enrichment ───────────────────────────────────────────────────────────────
+
+// EnrichOptions configura o enriquecimento de leads pós-descoberta.
+type EnrichOptions struct {
+	// CNPJ ativa o enriquecimento via find-cnpj (razão social, sócios, CNAE, situação).
+	CNPJ bool
+	// Instagram ativa o enriquecimento via find-instagram (handle + seguidores).
+	Instagram bool
+	// CNPJWorkers define o número de goroutines para enriquecimento CNPJ (padrão 5).
+	CNPJWorkers int
+	// InstagramWorkers define o número de goroutines para enriquecimento Instagram (padrão 4).
+	InstagramWorkers int
+}
+
+// EnrichAll enriquece concorrentemente uma fatia de leads com CNPJ e/ou Instagram.
+// Os leads são modificados in-place.
+func EnrichAll(ctx context.Context, leads []*Lead, opts EnrichOptions) {
+	if opts.CNPJWorkers <= 0 {
+		opts.CNPJWorkers = 5
+	}
+	if opts.InstagramWorkers <= 0 {
+		opts.InstagramWorkers = 4
+	}
+	if opts.CNPJ {
+		enrichConcurrent(ctx, leads, opts.CNPJWorkers, EnrichCNPJ)
+	}
+	if opts.Instagram {
+		enrichConcurrent(ctx, leads, opts.InstagramWorkers, EnrichInstagram)
+	}
+}
+
+// enrichConcurrent executa fn para cada lead com um pool de workers.
+func enrichConcurrent(ctx context.Context, leads []*Lead, workers int, fn func(context.Context, *Lead) error) {
+	sem := make(chan struct{}, workers)
+	var wg sync.WaitGroup
+	for _, l := range leads {
+		wg.Add(1)
+		go func(lead *Lead) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if ctx.Err() != nil {
+				return
+			}
+			_ = fn(ctx, lead) // errors silently ignored; lead fields remain empty
+		}(l)
+	}
+	wg.Wait()
+}

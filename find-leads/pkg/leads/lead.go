@@ -8,6 +8,7 @@ import (
 
 // Lead representa um estabelecimento/lead encontrado
 type Lead struct {
+	// Dados brutos dos scrapers
 	Name     string
 	Phone    string
 	Phone2   string
@@ -17,9 +18,23 @@ type Lead struct {
 	Category string
 	Website  string
 	Email    string
-	CNPJ     string
+	CNPJ     string // CNPJ encontrado pelo scraper (se disponível)
 	Rating   string
 	Source   string
+
+	// Enriquecimento CNPJ (via find-cnpj)
+	RazaoSocial  string
+	NomeFantasia string
+	Situacao     string   // ex: ATIVA, BAIXADA, INAPTA
+	CNAECode     string
+	CNAEDesc     string
+	Municipio    string
+	UF           string
+	Partners     []string
+
+	// Enriquecimento Instagram (via find-instagram)
+	Instagram string
+	Followers string
 }
 
 func (l *Lead) NormalizedName() string {

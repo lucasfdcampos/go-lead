@@ -14,8 +14,8 @@ func PrintResults(leads []*Lead) {
 		return
 	}
 
-	fmt.Printf("\n%-4s %-45s %-18s %-35s %-20s\n", "#", "NOME", "TELEFONE", "ENDEREÇO", "FONTE")
-	fmt.Println(strings.Repeat("─", 130))
+	fmt.Printf("\n%-4s %-45s %-18s %-35s %-20s %-15s %s\n", "#", "NOME", "TELEFONE", "ENDEREÇO", "FONTE", "INSTAGRAM", "CNPJ")
+	fmt.Println(strings.Repeat("─", 160))
 
 	for i, l := range leads {
 		name := truncate(l.Name, 44)
@@ -31,11 +31,19 @@ func PrintResults(leads []*Lead) {
 			addr = "-"
 		}
 		source := truncate(firstSource(l.Source), 19)
+		ig := l.Instagram
+		if ig == "" {
+			ig = "-"
+		}
+		cnpj := l.CNPJ
+		if cnpj == "" {
+			cnpj = "-"
+		}
 
-		fmt.Printf("%-4d %-45s %-18s %-35s %-20s\n", i+1, name, phone, addr, source)
+		fmt.Printf("%-4d %-45s %-18s %-35s %-20s %-15s %s\n", i+1, name, phone, addr, source, ig, cnpj)
 	}
 
-	fmt.Println(strings.Repeat("─", 130))
+	fmt.Println(strings.Repeat("─", 160))
 	fmt.Printf("Total: %d leads únicos\n", len(leads))
 }
 
@@ -53,8 +61,12 @@ func SaveCSV(leads []*Lead, filename string) error {
 	w := csv.NewWriter(f)
 	defer w.Flush()
 
-	header := []string{"#", "Nome", "Telefone", "Telefone2", "Endereco", "Cidade", "Estado",
-		"Categoria", "Website", "Email", "CNPJ", "Avaliacao", "Fontes"}
+	header := []string{
+		"#", "Nome", "Telefone", "Telefone2", "Endereco", "Cidade", "Estado",
+		"Categoria", "Website", "Email", "CNPJ", "RazaoSocial", "NomeFantasia",
+		"Situacao", "CNAECode", "CNAEDesc", "Municipio", "UF", "Socios",
+		"Instagram", "Seguidores", "Avaliacao", "Fontes",
+	}
 	if err := w.Write(header); err != nil {
 		return err
 	}
@@ -72,6 +84,16 @@ func SaveCSV(leads []*Lead, filename string) error {
 			l.Website,
 			l.Email,
 			l.CNPJ,
+			l.RazaoSocial,
+			l.NomeFantasia,
+			l.Situacao,
+			l.CNAECode,
+			l.CNAEDesc,
+			l.Municipio,
+			l.UF,
+			strings.Join(l.Partners, " | "),
+			l.Instagram,
+			l.Followers,
 			l.Rating,
 			l.Source,
 		}

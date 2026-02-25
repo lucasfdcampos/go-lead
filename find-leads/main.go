@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -15,14 +16,19 @@ import (
 func main() {
 	_ = godotenv.Load()
 
+	enrichCNPJ := flag.Bool("enrich-cnpj", false, "Enriquecer leads com dados de CNPJ (razão social, sócios, CNAE, situação)")
+	enrichInstagram := flag.Bool("enrich-instagram", false, "Enriquecer leads com perfil do Instagram (handle + seguidores)")
+	flag.Parse()
+
 	query := "loja de roupas"
 	location := "Arapongas-PR"
 
-	if len(os.Args) >= 3 {
-		query = os.Args[1]
-		location = os.Args[2]
-	} else if len(os.Args) == 2 {
-		query = os.Args[1]
+	args := flag.Args()
+	if len(args) >= 2 {
+		query = args[0]
+		location = args[1]
+	} else if len(args) == 1 {
+		query = args[0]
 	}
 
 	city, state := leads.ParseLocation(location)
@@ -32,6 +38,12 @@ func main() {
 	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
 	fmt.Printf("  Busca : %s\n", query)
 	fmt.Printf("  Local : %s - %s\n", city, state)
+	if *enrichCNPJ {
+		fmt.Println("  CNPJ  : ativado")
+	}
+	if *enrichInstagram {
+		fmt.Println("  IG    : ativado")
+	}
 	fmt.Printf("  Início: %s\n\n", time.Now().Format("02/01/2006 15:04:05"))
 
 	geoapifyKey := os.Getenv("GEOAPIFY_API_KEY")
@@ -65,10 +77,28 @@ func main() {
 		searchers = append(searchers, leads.NewGeminiScraper(geminiKey))
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	// Timeout total: 5 min de scraping + até 30 min de enriquecimento
+	totalTimeout := 5 * time.Minute
+	if *enrichCNPJ {
+		totalTimeout += 20 * time.Minute
+	}
+	if *enrichInstagram {
+		totalTimeout += 10 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), totalTimeout)
 	defer cancel()
 
 	found, results := leads.SearchAll(ctx, query, location, searchers...)
+
+	// ── Enriquecimento ────────────────────────────────────────────────────────
+	if *enrichCNPJ || *enrichInstagram {
+		fmt.Printf("\n  💡 Enriquecendo %d leads...", len(found))
+		leads.EnrichAll(ctx, found, leads.EnrichOptions{
+			CNPJ:      *enrichCNPJ,
+			Instagram: *enrichInstagram,
+		})
+		fmt.Println(" OK")
+	}
 
 	fmt.Println()
 	leads.PrintResults(found)
