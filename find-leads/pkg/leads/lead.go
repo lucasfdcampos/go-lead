@@ -103,8 +103,20 @@ func Deduplicate(leadsList []*Lead) []*Lead {
 		}
 		return s
 	}
-	_ = score
-
+	// swap faz o incoming se tornar o lead canônico quando tem mais dados,
+	// preservando campos extras do existing que o incoming não tem.
+	swap := func(existing, incoming *Lead) {
+		if score(incoming) <= score(existing) {
+			return
+		}
+		// incoming é melhor: troca os valores in-place mantendo o ponteiro do result
+		oldSource := existing.Source
+		*existing = *incoming
+		// preserva source combinado
+		if !strings.Contains(existing.Source, oldSource) {
+			existing.Source = oldSource + "+" + incoming.Source
+		}
+	}
 	merge := func(existing, incoming *Lead) {
 		if existing.Phone == "" && incoming.Phone != "" {
 			existing.Phone = incoming.Phone
@@ -145,24 +157,39 @@ func Deduplicate(leadsList []*Lead) []*Lead {
 
 		if phone != "" && len(phone) >= 8 {
 			if existing, ok := byPhone[phone]; ok {
+				swap(existing, lead)
 				merge(existing, lead)
+				if name != "" {
+					byName[name] = existing
+				}
+				if bagKey != "" {
+					byWordBag[bagKey] = existing
+				}
 				continue
 			}
 		}
 		if name != "" {
 			if existing, ok := byName[name]; ok {
+				swap(existing, lead)
 				merge(existing, lead)
 				if phone != "" && len(phone) >= 8 {
 					byPhone[phone] = existing
+				}
+				if bagKey != "" {
+					byWordBag[bagKey] = existing
 				}
 				continue
 			}
 		}
 		if bagKey != "" {
 			if existing, ok := byWordBag[bagKey]; ok {
+				swap(existing, lead)
 				merge(existing, lead)
 				if phone != "" && len(phone) >= 8 {
 					byPhone[phone] = existing
+				}
+				if name != "" {
+					byName[name] = existing
 				}
 				continue
 			}

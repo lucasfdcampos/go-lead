@@ -97,7 +97,7 @@ func solutudoFetchPage(client *http.Client, ctx context.Context, rawURL string) 
 	req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml")
 
-	resp, err := client.Do(req)
+	resp, err := DoWithRetry(ctx, client, req, 3)
 	if err != nil {
 		return nil, err
 	}

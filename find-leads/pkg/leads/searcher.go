@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -62,35 +63,58 @@ func QuerySlug(q string) string {
 	return strings.Trim(s, "-")
 }
 
-// SearchAll executa todas as fontes e retorna leads deduplicados
+// SearchAll executa todas as fontes concorrentemente (máx 5 simultâneas) e retorna leads deduplicados
 func SearchAll(ctx context.Context, query, location string, searchers ...Searcher) ([]*Lead, []SearchResult) {
+	const maxConcurrent = 5
+
+	results := make([]SearchResult, len(searchers))
+	sem := make(chan struct{}, maxConcurrent)
+	var wg sync.WaitGroup
+	var mu sync.Mutex // protege fmt.Printf (evita linhas entrelaçadas)
+
+	for i, s := range searchers {
+		wg.Add(1)
+		go func(idx int, src Searcher) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			if ctx.Err() != nil {
+				results[idx] = SearchResult{Source: src.Name(), Err: ctx.Err()}
+				return
+			}
+
+			mu.Lock()
+			fmt.Printf("  🔍 [%-30s] buscando...\n", src.Name())
+			mu.Unlock()
+
+			start := time.Now()
+			leads, err := src.Search(ctx, query, location)
+			took := time.Since(start)
+
+			results[idx] = SearchResult{
+				Source: src.Name(),
+				Leads:  leads,
+				Err:    err,
+				Took:   took,
+			}
+
+			mu.Lock()
+			if err != nil {
+				fmt.Printf("  ❌ [%-30s] erro: %v\n", src.Name(), err)
+			} else {
+				fmt.Printf("  ✅ [%-30s] %d leads (%v)\n", src.Name(), len(leads), took.Round(time.Millisecond))
+			}
+			mu.Unlock()
+		}(i, s)
+	}
+
+	wg.Wait()
+
 	var allLeads []*Lead
-	var results []SearchResult
-
-	for _, s := range searchers {
-		if ctx.Err() != nil {
-			break
-		}
-
-		start := time.Now()
-		fmt.Printf("  🔍 [%-30s] buscando...\r", s.Name())
-
-		leadsFound, err := s.Search(ctx, query, location)
-		took := time.Since(start)
-
-		r := SearchResult{
-			Source: s.Name(),
-			Leads:  leadsFound,
-			Err:    err,
-			Took:   took,
-		}
-		results = append(results, r)
-
-		if err != nil {
-			fmt.Printf("  ❌ [%-30s] erro: %v\n", s.Name(), err)
-		} else {
-			fmt.Printf("  ✅ [%-30s] %d leads (%v)\n", s.Name(), len(leadsFound), took.Round(time.Millisecond))
-			allLeads = append(allLeads, leadsFound...)
+	for _, r := range results {
+		if r.Err == nil {
+			allLeads = append(allLeads, r.Leads...)
 		}
 	}
 

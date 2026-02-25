@@ -83,7 +83,7 @@ func (g *GeoapifyScraper) Search(ctx context.Context, query, location string) ([
 	time.Sleep(300 * time.Millisecond)
 
 	client := &http.Client{Timeout: 20 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := DoWithRetry(ctx, client, req, 3)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +160,7 @@ func geoapifyGeocode(ctx context.Context, apiKey, city, state string) (float64, 
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := DoWithRetry(ctx, client, req, 3)
 	if err != nil {
 		return 0, 0, err
 	}

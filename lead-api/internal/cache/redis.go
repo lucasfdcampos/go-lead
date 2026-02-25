@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	redis "github.com/redis/go-redis/v9"
@@ -47,11 +48,16 @@ func (c *Client) Ping(ctx context.Context) error {
 // Close closes the Redis connection.
 func (c *Client) Close() error { return c.rdb.Close() }
 
+// normalizeKey lowercases and trims s so cache keys are case-insensitive.
+func normalizeKey(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
 // ─── Search cache ──────────────────────────────────────────────────────────────
 
 // SearchKey returns the cache key for a search.
 func SearchKey(query, location string, enrichCNPJ, enrichInstagram bool) string {
-	raw := fmt.Sprintf("%s|%s|cnpj=%v|ig=%v", query, location, enrichCNPJ, enrichInstagram)
+	raw := fmt.Sprintf("%s|%s|cnpj=%v|ig=%v", normalizeKey(query), normalizeKey(location), enrichCNPJ, enrichInstagram)
 	h := sha256.Sum256([]byte(raw))
 	return searchPrefix + fmt.Sprintf("%x", h)
 }
@@ -83,19 +89,22 @@ func (c *Client) DeleteSearch(ctx context.Context, key string) error {
 
 // EnrichedLead is the structure stored per lead in cache.
 type EnrichedLead struct {
-	CNPJ      string   `json:"cnpj,omitempty"`
-	Partners  []string `json:"partners,omitempty"`
-	CNAECode  string   `json:"cnae_code,omitempty"`
-	CNAEDesc  string   `json:"cnae_desc,omitempty"`
-	Municipio string   `json:"municipio,omitempty"`
-	UF        string   `json:"uf,omitempty"`
-	Instagram string   `json:"instagram,omitempty"`
-	Followers string   `json:"followers,omitempty"`
+	CNPJ         string   `json:"cnpj,omitempty"`
+	RazaoSocial  string   `json:"razao_social,omitempty"`
+	NomeFantasia string   `json:"nome_fantasia,omitempty"`
+	Situacao     string   `json:"situacao,omitempty"`
+	Partners     []string `json:"partners,omitempty"`
+	CNAECode     string   `json:"cnae_code,omitempty"`
+	CNAEDesc     string   `json:"cnae_desc,omitempty"`
+	Municipio    string   `json:"municipio,omitempty"`
+	UF           string   `json:"uf,omitempty"`
+	Instagram    string   `json:"instagram,omitempty"`
+	Followers    string   `json:"followers,omitempty"`
 }
 
 // EnrichmentKey returns cache key for per-lead enrichment data.
 func EnrichmentKey(name, city string) string {
-	raw := name + "|" + city
+	raw := normalizeKey(name) + "|" + normalizeKey(city)
 	h := sha256.Sum256([]byte(raw))
 	return enrichmentPrefix + fmt.Sprintf("%x", h)
 }

@@ -82,7 +82,7 @@ return nil, fmt.Errorf("tomtom: build request: %w", err)
 }
 req.Header.Set("Accept", "application/json")
 
-resp, err := t.client.Do(req)
+resp, err := DoWithRetry(ctx, t.client, req, 3)
 if err != nil {
 return nil, fmt.Errorf("tomtom: request failed: %w", err)
 }

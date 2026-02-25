@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -257,19 +258,38 @@ func (i *InstagramProfileChecker) Search(ctx context.Context, query string) (*In
 		score     int
 		followers int
 	}
+
+	const maxConcurrent = 3
+	sem := make(chan struct{}, maxConcurrent)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	var matches []candidate
 
-	for _, handle := range possibleHandles {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
+	for idx, handle := range possibleHandles {
+		wg.Add(1)
+		go func(h string, delay time.Duration) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 
-		ok, ogContent := i.checkProfileExists(ctx, handle)
-		if ok {
-			// Extrai o display name do og:title: 'DisplayName (@handle) • ...'
-			// Pontua pelo número de palavras do negócio presentes no display name.
-			// Usar apenas o display name (não URL/handle) evita falso-positivo
-			// onde os componentes do handle aparecem no og:url mas não no nome real.
+			// Stagger startup to avoid simultaneous hits
+			if delay > 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(delay):
+				}
+			}
+
+			if ctx.Err() != nil {
+				return
+			}
+
+			ok, ogContent := i.checkProfileExists(ctx, h)
+			if !ok {
+				return
+			}
+
 			score := 0
 			displayName := extractOGDisplayName(ogContent)
 			for _, w := range businessWords {
@@ -278,11 +298,14 @@ func (i *InstagramProfileChecker) Search(ctx context.Context, query string) (*In
 				}
 			}
 			followers := extractFollowerCount(ogContent)
-			matches = append(matches, candidate{handle, score, followers})
-		}
 
-		time.Sleep(300 * time.Millisecond)
+			mu.Lock()
+			matches = append(matches, candidate{h, score, followers})
+			mu.Unlock()
+		}(handle, time.Duration(idx)*150*time.Millisecond)
 	}
+
+	wg.Wait()
 
 	if len(matches) == 0 {
 		return nil, fmt.Errorf("nenhum handle válido encontrado")
@@ -457,10 +480,10 @@ func (i *InstagramProfileChecker) generatePossibleHandles(query string) (handles
 	// Combinações de 3 palavras quando a 3ª palavra é tipo de negócio
 	// Ex: "MVB FIT ACADEMIA" → gera "mvbfitacademia"
 	if w1 != "" && w2 != "" {
-		addHandle(w0 + w1 + w2)              // "mvbfitacademia" ← soluciona MVB FIT
+		addHandle(w0 + w1 + w2)             // "mvbfitacademia" ← soluciona MVB FIT
 		addHandle(w0 + "." + w1 + "." + w2) // "mvb.fit.academia"
-		addHandle(w0 + w2 + w1)              // "mvbacademiafit"
-		addHandle(w2 + w0 + w1)              // "academiamvbfit"
+		addHandle(w0 + w2 + w1)             // "mvbacademiafit"
+		addHandle(w2 + w0 + w1)             // "academiamvbfit"
 	}
 
 	// Apenas a primeira palavra — só para nomes de uma única palavra significativa

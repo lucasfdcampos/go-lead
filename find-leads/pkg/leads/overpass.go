@@ -92,7 +92,7 @@ func (o *OverpassScraper) Search(ctx context.Context, query, location string) ([
 	time.Sleep(1 * time.Second)
 
 	client := &http.Client{Timeout: 35 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := DoWithRetry(ctx, client, req, 3)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +174,7 @@ func nominatimBBox(ctx context.Context, city, state string) (string, error) {
 	req.Header.Set("User-Agent", "find-leads/1.0")
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := DoWithRetry(ctx, client, req, 3)
 	if err != nil {
 		return "", err
 	}

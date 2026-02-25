@@ -12,16 +12,32 @@ type SearchRequest struct {
 
 // Lead é o lead enriquecido retornado pela API
 type Lead struct {
-	Name      string   `json:"name"`
-	Phone     string   `json:"phone,omitempty"`
-	CNPJ      string   `json:"cnpj,omitempty"`
-	Partners  []string `json:"partners,omitempty"`
-	Instagram string   `json:"instagram,omitempty"`
-	Followers string   `json:"followers,omitempty"`
-	CNAEMatch *bool    `json:"cnae_match,omitempty"`
-	Municipio string   `json:"municipio,omitempty"`
-	UF        string   `json:"uf,omitempty"`
-	Source    string   `json:"source,omitempty"`
+	// Dados brutos dos scrapers
+	Name     string `json:"name"`
+	Phone    string `json:"phone,omitempty"`
+	Phone2   string `json:"phone2,omitempty"`
+	Address  string `json:"address,omitempty"`
+	City     string `json:"city,omitempty"`
+	State    string `json:"state,omitempty"`
+	Category string `json:"category,omitempty"`
+	Website  string `json:"website,omitempty"`
+	Email    string `json:"email,omitempty"`
+	Source   string `json:"source,omitempty"`
+
+	// Dados do enriquecimento CNPJ
+	CNPJ         string   `json:"cnpj,omitempty"`
+	RazaoSocial  string   `json:"razao_social,omitempty"`
+	NomeFantasia string   `json:"nome_fantasia,omitempty"`
+	Situacao     string   `json:"situacao,omitempty"`
+	Partners     []string `json:"partners,omitempty"`
+	CNAEMatch    *bool    `json:"cnae_match,omitempty"`
+	CNAEDesc     string   `json:"cnae_desc,omitempty"`
+	Municipio    string   `json:"municipio,omitempty"`
+	UF           string   `json:"uf,omitempty"`
+
+	// Dados do enriquecimento Instagram
+	Instagram string `json:"instagram,omitempty"`
+	Followers string `json:"followers,omitempty"`
 }
 
 // SearchResponse é a resposta da API
@@ -73,15 +89,18 @@ type CNAEHintDoc struct {
 
 // CachedEnrichment é o cache por lead individual no MongoDB (collection: enrichments)
 type CachedEnrichment struct {
-	Key       string    `bson:"_id"` // sha256(name+city)
-	CNPJ      string    `bson:"cnpj"`
-	Partners  []string  `bson:"partners"`
-	CNAECode  string    `bson:"cnae_code"`
-	CNAEDesc  string    `bson:"cnae_desc"`
-	Municipio string    `bson:"municipio"`
-	UF        string    `bson:"uf"`
-	Instagram string    `bson:"instagram"`
-	Followers string    `bson:"followers"`
-	UpdatedAt time.Time `bson:"updated_at"`
-	ExpiresAt time.Time `bson:"expires_at"`
+	Key          string    `bson:"_id"` // sha256(name+city)
+	CNPJ         string    `bson:"cnpj"`
+	RazaoSocial  string    `bson:"razao_social"`
+	NomeFantasia string    `bson:"nome_fantasia"`
+	Situacao     string    `bson:"situacao"`
+	Partners     []string  `bson:"partners"`
+	CNAECode     string    `bson:"cnae_code"`
+	CNAEDesc     string    `bson:"cnae_desc"`
+	Municipio    string    `bson:"municipio"`
+	UF           string    `bson:"uf"`
+	Instagram    string    `bson:"instagram"`
+	Followers    string    `bson:"followers"`
+	UpdatedAt    time.Time `bson:"updated_at"`
+	ExpiresAt    time.Time `bson:"expires_at"`
 }

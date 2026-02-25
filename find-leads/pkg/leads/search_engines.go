@@ -243,7 +243,7 @@ func searchEngineLeads(ctx context.Context, searchURL, selector, city, state, so
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := DoWithRetry(ctx, client, req, 3)
 	if err != nil {
 		return nil, err
 	}

@@ -11,6 +11,7 @@ type CNPJ struct {
 	Formatted    string   // Com formatação XX.XXX.XXX/XXXX-XX
 	RazaoSocial  string   // Razão Social da empresa
 	NomeFantasia string   // Nome Fantasia
+	Situacao     string   // Situação cadastral (ex: ATIVA, BAIXADA)
 	Socios       []string // Lista de sócios
 	Telefones    []string // Lista de telefones
 	CNAE         string   // CNAE principal (código da atividade econômica)
@@ -24,10 +25,11 @@ func ExtractCNPJ(text string) *CNPJ {
 	// Regex para CNPJ com ou sem formata\u00e7\u00e3o
 	patterns := []string{
 		`\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}`, // 00.000.000/0000-00
-		`\d{14}`,                            // 00000000000000
+		`\d{14}`,                          // 00000000000000
 	}
 
-	for _, pattern := range patterns {		re := regexp.MustCompile(pattern)
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(pattern)
 		matches := re.FindAllString(text, -1)
 
 		for _, match := range matches {

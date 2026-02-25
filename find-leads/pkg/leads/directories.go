@@ -38,7 +38,7 @@ func (a *ApontadorScraper) Search(ctx context.Context, query, location string) (
 	time.Sleep(500 * time.Millisecond)
 
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := DoWithRetry(ctx, client, req, 3)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +111,7 @@ func (t *TeleListasScraper) Search(ctx context.Context, query, location string) 
 	time.Sleep(500 * time.Millisecond)
 
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := DoWithRetry(ctx, client, req, 3)
 	if err != nil {
 		return nil, err
 	}

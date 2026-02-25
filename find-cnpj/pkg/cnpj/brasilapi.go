@@ -48,6 +48,7 @@ func (b *BrasilAPISearcher) Search(ctx context.Context, query string) (*CNPJ, er
 		CNPJ         string `json:"cnpj"`
 		RazaoSocial  string `json:"razao_social"`
 		NomeFantasia string `json:"nome_fantasia"`
+		Situacao     string `json:"descricao_situacao_cadastral"`
 		DDD          string `json:"ddd_telefone_1"`
 		Telefone     string `json:"telefone_1"`
 		CNAEFiscal   int    `json:"cnae_fiscal"`
@@ -74,6 +75,7 @@ func (b *BrasilAPISearcher) Search(ctx context.Context, query string) (*CNPJ, er
 	// Adiciona informações extras
 	cnpjObj.RazaoSocial = result.RazaoSocial
 	cnpjObj.NomeFantasia = result.NomeFantasia
+	cnpjObj.Situacao = result.Situacao
 
 	// Adiciona CNAE se disponível
 	if result.CNAEFiscal > 0 {
@@ -117,6 +119,9 @@ func EnrichCNPJData(ctx context.Context, cnpj *CNPJ) error {
 		}
 		if enriched.NomeFantasia != "" {
 			cnpj.NomeFantasia = enriched.NomeFantasia
+		}
+		if enriched.Situacao != "" {
+			cnpj.Situacao = enriched.Situacao
 		}
 		if len(enriched.Telefones) > 0 {
 			cnpj.Telefones = enriched.Telefones

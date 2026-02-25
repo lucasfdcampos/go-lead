@@ -16,13 +16,16 @@ import (
 
 // CNPJResult holds CNPJ enrichment data for a single lead.
 type CNPJResult struct {
-	CNPJ      string
-	Partners  []string
-	CNAECode  string
-	CNAEDesc  string
-	CNAEMatch bool
-	Municipio string
-	UF        string
+	CNPJ         string
+	RazaoSocial  string
+	NomeFantasia string
+	Situacao     string
+	Partners     []string
+	CNAECode     string
+	CNAEDesc     string
+	CNAEMatch    bool
+	Municipio    string
+	UF           string
 }
 
 // EnrichCNPJ looks up and enriches CNPJ data for a given lead name + city.
@@ -43,13 +46,16 @@ func EnrichCNPJ(
 		if cached, err := rdb.GetEnrichment(ctx, cacheKey); err == nil && cached != nil && cached.CNPJ != "" {
 			match := cnae.IsCompatible(query, cached.CNAECode)
 			return &CNPJResult{
-				CNPJ:      cached.CNPJ,
-				Partners:  cached.Partners,
-				CNAECode:  cached.CNAECode,
-				CNAEDesc:  cached.CNAEDesc,
-				CNAEMatch: match,
-				Municipio: cached.Municipio,
-				UF:        cached.UF,
+				CNPJ:         cached.CNPJ,
+				RazaoSocial:  cached.RazaoSocial,
+				NomeFantasia: cached.NomeFantasia,
+				Situacao:     cached.Situacao,
+				Partners:     cached.Partners,
+				CNAECode:     cached.CNAECode,
+				CNAEDesc:     cached.CNAEDesc,
+				CNAEMatch:    match,
+				Municipio:    cached.Municipio,
+				UF:           cached.UF,
 			}, nil
 		}
 	}
@@ -61,22 +67,28 @@ func EnrichCNPJ(
 			// Warm Redis
 			if rdb != nil {
 				_ = rdb.SetEnrichment(ctx, cacheKey, &cache.EnrichedLead{
-					CNPJ:      cached.CNPJ,
-					Partners:  cached.Partners,
-					CNAECode:  cached.CNAECode,
-					CNAEDesc:  cached.CNAEDesc,
-					Municipio: cached.Municipio,
-					UF:        cached.UF,
+					CNPJ:         cached.CNPJ,
+					RazaoSocial:  cached.RazaoSocial,
+					NomeFantasia: cached.NomeFantasia,
+					Situacao:     cached.Situacao,
+					Partners:     cached.Partners,
+					CNAECode:     cached.CNAECode,
+					CNAEDesc:     cached.CNAEDesc,
+					Municipio:    cached.Municipio,
+					UF:           cached.UF,
 				})
 			}
 			return &CNPJResult{
-				CNPJ:      cached.CNPJ,
-				Partners:  cached.Partners,
-				CNAECode:  cached.CNAECode,
-				CNAEDesc:  cached.CNAEDesc,
-				CNAEMatch: match,
-				Municipio: cached.Municipio,
-				UF:        cached.UF,
+				CNPJ:         cached.CNPJ,
+				RazaoSocial:  cached.RazaoSocial,
+				NomeFantasia: cached.NomeFantasia,
+				Situacao:     cached.Situacao,
+				Partners:     cached.Partners,
+				CNAECode:     cached.CNAECode,
+				CNAEDesc:     cached.CNAEDesc,
+				CNAEMatch:    match,
+				Municipio:    cached.Municipio,
+				UF:           cached.UF,
 			}, nil
 		}
 	}
@@ -107,36 +119,45 @@ func EnrichCNPJ(
 	cnaeCode := strings.TrimSpace(result.CNPJ.CNAE)
 
 	out := &CNPJResult{
-		CNPJ:      result.CNPJ.Formatted,
-		Partners:  result.CNPJ.Socios,
-		CNAECode:  cnaeCode,
-		CNAEDesc:  result.CNPJ.CNAEDesc,
-		CNAEMatch: cnae.IsCompatible(query, cnaeCode),
-		Municipio: result.CNPJ.Municipio,
-		UF:        result.CNPJ.UF,
+		CNPJ:         result.CNPJ.Formatted,
+		RazaoSocial:  result.CNPJ.RazaoSocial,
+		NomeFantasia: result.CNPJ.NomeFantasia,
+		Situacao:     result.CNPJ.Situacao,
+		Partners:     result.CNPJ.Socios,
+		CNAECode:     cnaeCode,
+		CNAEDesc:     result.CNPJ.CNAEDesc,
+		CNAEMatch:    cnae.IsCompatible(query, cnaeCode),
+		Municipio:    result.CNPJ.Municipio,
+		UF:           result.CNPJ.UF,
 	}
 
 	// Persist to caches
 	enriched := &cache.EnrichedLead{
-		CNPJ:      out.CNPJ,
-		Partners:  out.Partners,
-		CNAECode:  out.CNAECode,
-		CNAEDesc:  out.CNAEDesc,
-		Municipio: out.Municipio,
-		UF:        out.UF,
+		CNPJ:         out.CNPJ,
+		RazaoSocial:  out.RazaoSocial,
+		NomeFantasia: out.NomeFantasia,
+		Situacao:     out.Situacao,
+		Partners:     out.Partners,
+		CNAECode:     out.CNAECode,
+		CNAEDesc:     out.CNAEDesc,
+		Municipio:    out.Municipio,
+		UF:           out.UF,
 	}
 	if rdb != nil {
 		_ = rdb.SetEnrichment(ctx, cacheKey, enriched)
 	}
 	if mdb != nil {
 		_ = mdb.SaveEnrichment(ctx, &store.CachedEnrichment{
-			Key:       cacheKey,
-			CNPJ:      enriched.CNPJ,
-			Partners:  enriched.Partners,
-			CNAECode:  enriched.CNAECode,
-			CNAEDesc:  enriched.CNAEDesc,
-			Municipio: enriched.Municipio,
-			UF:        enriched.UF,
+			Key:          cacheKey,
+			CNPJ:         enriched.CNPJ,
+			RazaoSocial:  enriched.RazaoSocial,
+			NomeFantasia: enriched.NomeFantasia,
+			Situacao:     enriched.Situacao,
+			Partners:     enriched.Partners,
+			CNAECode:     enriched.CNAECode,
+			CNAEDesc:     enriched.CNAEDesc,
+			Municipio:    enriched.Municipio,
+			UF:           enriched.UF,
 		})
 	}
 

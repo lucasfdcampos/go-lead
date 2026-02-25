@@ -11,6 +11,8 @@ package store
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/lucasfdcampos/lead-api/internal/domain"
@@ -146,9 +148,12 @@ func (c *Client) SaveSearch(ctx context.Context, s *domain.StoredSearch) (string
 // FindSearch looks up a recent search by query/location/flags.
 // Returns nil, nil when not found.
 func (c *Client) FindSearch(ctx context.Context, query, location string, enrichCNPJ, enrichInstagram bool) (*domain.StoredSearch, error) {
+	// Normalize for case-insensitive match
+	q := regexp.QuoteMeta(strings.ToLower(strings.TrimSpace(query)))
+	l := regexp.QuoteMeta(strings.ToLower(strings.TrimSpace(location)))
 	filter := bson.M{
-		"query":            query,
-		"location":         location,
+		"query":            bson.M{"$regex": "(?i)^" + q + "$"},
+		"location":         bson.M{"$regex": "(?i)^" + l + "$"},
 		"enrich_cnpj":      enrichCNPJ,
 		"enrich_instagram": enrichInstagram,
 	}
@@ -290,17 +295,20 @@ func (c *Client) QueryLeadfinderCNAEs(ctx context.Context, keywords []string) ([
 
 // CachedEnrichment is the MongoDB document for per-lead enrichment.
 type CachedEnrichment struct {
-	Key       string    `bson:"_id"`
-	CNPJ      string    `bson:"cnpj,omitempty"`
-	Partners  []string  `bson:"partners,omitempty"`
-	CNAECode  string    `bson:"cnae_code,omitempty"`
-	CNAEDesc  string    `bson:"cnae_desc,omitempty"`
-	Municipio string    `bson:"municipio,omitempty"`
-	UF        string    `bson:"uf,omitempty"`
-	Instagram string    `bson:"instagram,omitempty"`
-	Followers string    `bson:"followers,omitempty"`
-	UpdatedAt time.Time `bson:"updated_at"`
-	ExpiresAt time.Time `bson:"expires_at"`
+	Key          string    `bson:"_id"`
+	CNPJ         string    `bson:"cnpj,omitempty"`
+	RazaoSocial  string    `bson:"razao_social,omitempty"`
+	NomeFantasia string    `bson:"nome_fantasia,omitempty"`
+	Situacao     string    `bson:"situacao,omitempty"`
+	Partners     []string  `bson:"partners,omitempty"`
+	CNAECode     string    `bson:"cnae_code,omitempty"`
+	CNAEDesc     string    `bson:"cnae_desc,omitempty"`
+	Municipio    string    `bson:"municipio,omitempty"`
+	UF           string    `bson:"uf,omitempty"`
+	Instagram    string    `bson:"instagram,omitempty"`
+	Followers    string    `bson:"followers,omitempty"`
+	UpdatedAt    time.Time `bson:"updated_at"`
+	ExpiresAt    time.Time `bson:"expires_at"`
 }
 
 // GetEnrichment returns cached per-lead enrichment data or nil.

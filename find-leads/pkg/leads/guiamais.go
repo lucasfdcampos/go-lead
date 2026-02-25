@@ -50,7 +50,7 @@ func scrapeGuiaMais(ctx context.Context, rawURL, city, state string) ([]*Lead, e
 	req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9")
 
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := DoWithRetry(ctx, client, req, 3)
 	if err != nil {
 		return nil, err
 	}
