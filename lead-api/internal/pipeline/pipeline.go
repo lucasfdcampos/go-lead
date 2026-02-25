@@ -17,8 +17,10 @@ import (
 	leadsearch "github.com/lucasfdcampos/find-leads/pkg/leads"
 
 	"github.com/lucasfdcampos/lead-api/internal/cache"
+	"github.com/lucasfdcampos/lead-api/internal/cnae"
 	"github.com/lucasfdcampos/lead-api/internal/domain"
 	"github.com/lucasfdcampos/lead-api/internal/enrichment"
+	"github.com/lucasfdcampos/lead-api/internal/filter"
 	"github.com/lucasfdcampos/lead-api/internal/store"
 )
 
@@ -89,9 +91,31 @@ func Run(ctx context.Context, req domain.SearchRequest, cfg Config) (*domain.Sea
 		})
 	}
 
+	// ── Phase 2b: Name-relevance pre-filter (always-on) ──────────────────────
+	var totalDiscarded int
+	leads, disc0 := filter.ByNameRelevance(leads, req.Query)
+	totalDiscarded += disc0
+
 	// ── Phase 3: CNPJ enrichment ─────────────────────────────────────────────
 	if req.EnrichCNPJ && len(leads) > 0 {
 		leads = enrichCNPJConcurrent(ctx, leads, req.Query, city, state, cfg)
+
+		// ── Phase 3b: Location + category post-filters ───────────────────────
+		var compatibleCodes []string
+		if cfg.Mongo != nil {
+			// Get codes from MongoDB leadfinder.cnaes
+			mc := cfg.Mongo.MongoClient()
+			compatibleCodes = cnae.QueryCompatibleCodes(ctx, req.Query, mc)
+		}
+		// Fall back to static map if MongoDB returned nothing
+		if len(compatibleCodes) == 0 {
+			compatibleCodes = cnae.StaticCompatibleCodes(req.Query)
+		}
+
+		var d1, d2 int
+		leads, d1 = filter.ByLocation(leads, city, state)
+		leads, d2 = filter.ByCategory(leads, compatibleCodes)
+		totalDiscarded += d1 + d2
 	}
 
 	// ── Phase 4: Instagram enrichment ────────────────────────────────────────
@@ -104,6 +128,7 @@ func Run(ctx context.Context, req domain.SearchRequest, cfg Config) (*domain.Sea
 		Query:      req.Query,
 		Location:   req.Location,
 		Total:      len(leads),
+		Discarded:  totalDiscarded,
 		Cached:     false,
 		StartedAt:  start,
 		DurationMs: time.Since(start).Milliseconds(),
@@ -166,6 +191,8 @@ func enrichCNPJConcurrent(
 			mu.Lock()
 			enriched[idx].CNPJ = res.CNPJ
 			enriched[idx].Partners = res.Partners
+			enriched[idx].Municipio = res.Municipio
+			enriched[idx].UF = res.UF
 			if res.CNAEMatch {
 				enriched[idx].CNAEMatch = &t
 			} else {

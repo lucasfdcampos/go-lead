@@ -87,6 +87,8 @@ type EnrichedLead struct {
 	Partners  []string `json:"partners,omitempty"`
 	CNAECode  string   `json:"cnae_code,omitempty"`
 	CNAEDesc  string   `json:"cnae_desc,omitempty"`
+	Municipio string   `json:"municipio,omitempty"`
+	UF        string   `json:"uf,omitempty"`
 	Instagram string   `json:"instagram,omitempty"`
 	Followers string   `json:"followers,omitempty"`
 }

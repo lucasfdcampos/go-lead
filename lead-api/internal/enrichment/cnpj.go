@@ -21,6 +21,8 @@ type CNPJResult struct {
 	CNAECode  string
 	CNAEDesc  string
 	CNAEMatch bool
+	Municipio string
+	UF        string
 }
 
 // EnrichCNPJ looks up and enriches CNPJ data for a given lead name + city.
@@ -46,6 +48,8 @@ func EnrichCNPJ(
 				CNAECode:  cached.CNAECode,
 				CNAEDesc:  cached.CNAEDesc,
 				CNAEMatch: match,
+				Municipio: cached.Municipio,
+				UF:        cached.UF,
 			}, nil
 		}
 	}
@@ -57,10 +61,12 @@ func EnrichCNPJ(
 			// Warm Redis
 			if rdb != nil {
 				_ = rdb.SetEnrichment(ctx, cacheKey, &cache.EnrichedLead{
-					CNPJ:     cached.CNPJ,
-					Partners: cached.Partners,
-					CNAECode: cached.CNAECode,
-					CNAEDesc: cached.CNAEDesc,
+					CNPJ:      cached.CNPJ,
+					Partners:  cached.Partners,
+					CNAECode:  cached.CNAECode,
+					CNAEDesc:  cached.CNAEDesc,
+					Municipio: cached.Municipio,
+					UF:        cached.UF,
 				})
 			}
 			return &CNPJResult{
@@ -69,6 +75,8 @@ func EnrichCNPJ(
 				CNAECode:  cached.CNAECode,
 				CNAEDesc:  cached.CNAEDesc,
 				CNAEMatch: match,
+				Municipio: cached.Municipio,
+				UF:        cached.UF,
 			}, nil
 		}
 	}
@@ -101,25 +109,31 @@ func EnrichCNPJ(
 		CNAECode:  cnaeCode,
 		CNAEDesc:  result.CNPJ.CNAEDesc,
 		CNAEMatch: cnae.IsCompatible(query, cnaeCode),
+		Municipio: result.CNPJ.Municipio,
+		UF:        result.CNPJ.UF,
 	}
 
 	// Persist to caches
 	enriched := &cache.EnrichedLead{
-		CNPJ:     out.CNPJ,
-		Partners: out.Partners,
-		CNAECode: out.CNAECode,
-		CNAEDesc: out.CNAEDesc,
+		CNPJ:      out.CNPJ,
+		Partners:  out.Partners,
+		CNAECode:  out.CNAECode,
+		CNAEDesc:  out.CNAEDesc,
+		Municipio: out.Municipio,
+		UF:        out.UF,
 	}
 	if rdb != nil {
 		_ = rdb.SetEnrichment(ctx, cacheKey, enriched)
 	}
 	if mdb != nil {
 		_ = mdb.SaveEnrichment(ctx, &store.CachedEnrichment{
-			Key:      cacheKey,
-			CNPJ:     enriched.CNPJ,
-			Partners: enriched.Partners,
-			CNAECode: enriched.CNAECode,
-			CNAEDesc: enriched.CNAEDesc,
+			Key:       cacheKey,
+			CNPJ:      enriched.CNPJ,
+			Partners:  enriched.Partners,
+			CNAECode:  enriched.CNAECode,
+			CNAEDesc:  enriched.CNAEDesc,
+			Municipio: enriched.Municipio,
+			UF:        enriched.UF,
 		})
 	}
 

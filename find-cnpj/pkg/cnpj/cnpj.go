@@ -15,18 +15,19 @@ type CNPJ struct {
 	Telefones    []string // Lista de telefones
 	CNAE         string   // CNAE principal (código da atividade econômica)
 	CNAEDesc     string   // Descrição do CNAE
+	Municipio    string   // Município do estabelecimento
+	UF           string   // Unidade Federativa (estado)
 }
 
-// ExtractCNPJ extrai e valida um CNPJ de um texto
+// ExtractCNPJ extrai o primeiro CNPJ válido de um texto
 func ExtractCNPJ(text string) *CNPJ {
-	// Regex para CNPJ com ou sem formatação
+	// Regex para CNPJ com ou sem formata\u00e7\u00e3o
 	patterns := []string{
 		`\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}`, // 00.000.000/0000-00
-		`\d{14}`,                          // 00000000000000
+		`\d{14}`,                            // 00000000000000
 	}
 
-	for _, pattern := range patterns {
-		re := regexp.MustCompile(pattern)
+	for _, pattern := range patterns {		re := regexp.MustCompile(pattern)
 		matches := re.FindAllString(text, -1)
 
 		for _, match := range matches {

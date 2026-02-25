@@ -3,7 +3,14 @@
 // business activity classification code returned by BrasilAPI.
 package cnae
 
-import "strings"
+import (
+	"context"
+	"strings"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+)
 
 // cnaePrefixMap maps query keywords (lowercase) to expected CNAE code prefixes.
 // A lead is considered a CNAE match when its CNAE code starts with any of the listed prefixes.
@@ -120,6 +127,26 @@ var cnaePrefixMap = map[string][]string{
 	"artigos religiosos":    {"4789"},
 }
 
+// StaticCompatibleCodes returns the CNAE code prefixes from the hardcoded map
+// for the given query. Returns nil when the query is unknown.
+// (Codes are prefixes, not full codes — callers may use them for prefix matching.)
+func StaticCompatibleCodes(query string) []string {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if p, ok := cnaePrefixMap[q]; ok {
+		out := make([]string, len(p))
+		copy(out, p)
+		return out
+	}
+	for key, p := range cnaePrefixMap {
+		if strings.Contains(q, key) || strings.Contains(key, q) {
+			out := make([]string, len(p))
+			copy(out, p)
+			return out
+		}
+	}
+	return nil
+}
+
 // IsCompatible reports whether a business's CNAE code is compatible with the
 // search query. Returns true when no mapping exists for the query (conservative —
 // we don't want to discard leads with unknown query types).
@@ -152,4 +179,50 @@ func matchesPrefixes(cnaeCode string, prefixes []string) bool {
 		}
 	}
 	return false
+}
+
+// QueryCompatibleCodes queries the leadfinder MongoDB database for CNAE codes
+// whose description matches the search query keywords.
+// It supplements the static cnaePrefixMap with live data from MongoDB.
+// Returns nil and no error when MongoDB is unavailable.
+func QueryCompatibleCodes(ctx context.Context, query string, mc *mongo.Client) []string {
+	if mc == nil {
+		return nil
+	}
+	q := strings.ToLower(strings.TrimSpace(query))
+	// Split the query into individual words as search terms, skipping short stop words.
+	stopwords := map[string]bool{"de": true, "do": true, "da": true, "e": true, "em": true, "a": true, "o": true}
+	var keywords []string
+	for _, word := range strings.Fields(q) {
+		if len(word) >= 3 && !stopwords[word] {
+			keywords = append(keywords, word)
+		}
+	}
+	if len(keywords) == 0 {
+		return nil
+	}
+
+	ors := make(bson.A, 0, len(keywords))
+	for _, kw := range keywords {
+		ors = append(ors, bson.M{"descricao": bson.M{"$regex": kw, "$options": "i"}})
+	}
+
+	coll := mc.Database("leadfinder").Collection("cnaes")
+	cursor, err := coll.Find(ctx, bson.M{"$or": ors}, options.Find().SetProjection(bson.M{"codigo": 1}))
+	if err != nil {
+		return nil
+	}
+	defer cursor.Close(ctx)
+
+	type cnaedoc struct {
+		Codigo string `bson:"codigo"`
+	}
+	var codes []string
+	for cursor.Next(ctx) {
+		var doc cnaedoc
+		if err := cursor.Decode(&doc); err == nil && doc.Codigo != "" {
+			codes = append(codes, doc.Codigo)
+		}
+	}
+	return codes
 }

@@ -58,6 +58,11 @@ func (c *Client) Disconnect(ctx context.Context) error {
 	return c.mc.Disconnect(ctx)
 }
 
+// MongoClient exposes the underlying *mongo.Client for cross-database queries.
+func (c *Client) MongoClient() *mongo.Client {
+	return c.mc
+}
+
 // ensureIndices creates TTL and lookup indices if missing.
 func (c *Client) ensureIndices(ctx context.Context) error {
 	// searches: TTL on expires_at + lookup on (query, location)
@@ -141,10 +146,52 @@ type CachedEnrichment struct {
 	Partners  []string  `bson:"partners,omitempty"`
 	CNAECode  string    `bson:"cnae_code,omitempty"`
 	CNAEDesc  string    `bson:"cnae_desc,omitempty"`
+	Municipio string    `bson:"municipio,omitempty"`
+	UF        string    `bson:"uf,omitempty"`
 	Instagram string    `bson:"instagram,omitempty"`
 	Followers string    `bson:"followers,omitempty"`
 	UpdatedAt time.Time `bson:"updated_at"`
 	ExpiresAt time.Time `bson:"expires_at"`
+}
+
+// QueryLeadfinderCNAEs returns CNAE codes from the leadfinder database whose
+// description contains any of the given keywords (case-insensitive).
+// Returns an empty slice (not an error) when the collection is not reachable.
+func (c *Client) QueryLeadfinderCNAEs(ctx context.Context, keywords []string) ([]string, error) {
+	if len(keywords) == 0 {
+		return nil, nil
+	}
+
+	// Build $or filter: each keyword as a case-insensitive regex on descricao
+	ors := make(bson.A, 0, len(keywords))
+	for _, kw := range keywords {
+		if kw == "" {
+			continue
+		}
+		ors = append(ors, bson.M{"descricao": bson.M{"$regex": kw, "$options": "i"}})
+	}
+	if len(ors) == 0 {
+		return nil, nil
+	}
+
+	coll := c.mc.Database("leadfinder").Collection("cnaes")
+	cursor, err := coll.Find(ctx, bson.M{"$or": ors}, options.Find().SetProjection(bson.M{"codigo": 1}))
+	if err != nil {
+		return nil, fmt.Errorf("store: query cnaes: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	type cnaedoc struct {
+		Codigo string `bson:"codigo"`
+	}
+	var codes []string
+	for cursor.Next(ctx) {
+		var doc cnaedoc
+		if err := cursor.Decode(&doc); err == nil && doc.Codigo != "" {
+			codes = append(codes, doc.Codigo)
+		}
+	}
+	return codes, cursor.Err()
 }
 
 // GetEnrichment returns cached per-lead enrichment data or nil.

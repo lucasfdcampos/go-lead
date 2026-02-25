@@ -19,6 +19,8 @@ type Lead struct {
 	Instagram string   `json:"instagram,omitempty"`
 	Followers string   `json:"followers,omitempty"`
 	CNAEMatch *bool    `json:"cnae_match,omitempty"`
+	Municipio string   `json:"municipio,omitempty"`
+	UF        string   `json:"uf,omitempty"`
 	Source    string   `json:"source,omitempty"`
 }
 
@@ -27,6 +29,7 @@ type SearchResponse struct {
 	Query      string    `json:"query"`
 	Location   string    `json:"location"`
 	Total      int       `json:"total"`
+	Discarded  int       `json:"discarded,omitempty"` // leads filtrados por cidade/CNAE
 	Cached     bool      `json:"cached"`
 	SearchID   string    `json:"search_id,omitempty"`
 	StartedAt  time.Time `json:"started_at"`
@@ -55,6 +58,8 @@ type CachedEnrichment struct {
 	Partners  []string  `bson:"partners"`
 	CNAECode  string    `bson:"cnae_code"`
 	CNAEDesc  string    `bson:"cnae_desc"`
+	Municipio string    `bson:"municipio"`
+	UF        string    `bson:"uf"`
 	Instagram string    `bson:"instagram"`
 	Followers string    `bson:"followers"`
 	UpdatedAt time.Time `bson:"updated_at"`

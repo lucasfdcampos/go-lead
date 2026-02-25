@@ -52,11 +52,12 @@ func (b *BrasilAPISearcher) Search(ctx context.Context, query string) (*CNPJ, er
 		Telefone     string `json:"telefone_1"`
 		CNAEFiscal   int    `json:"cnae_fiscal"`
 		CNAEDesc     string `json:"cnae_fiscal_descricao"`
+		Municipio    string `json:"municipio"`
+		UF           string `json:"uf"`
 		QSA          []struct {
 			Nome string `json:"nome_socio"`
 		} `json:"qsa"`
 	}
-
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("erro ao decodificar resposta: %w", err)
 	}
@@ -80,11 +81,9 @@ func (b *BrasilAPISearcher) Search(ctx context.Context, query string) (*CNPJ, er
 		cnpjObj.CNAEDesc = result.CNAEDesc
 	}
 
-	// Adiciona telefone se disponível
-	if result.DDD != "" && result.Telefone != "" {
-		telefone := fmt.Sprintf("(%s) %s", result.DDD, result.Telefone)
-		cnpjObj.Telefones = append(cnpjObj.Telefones, telefone)
-	}
+	// Adiciona município e UF
+	cnpjObj.Municipio = result.Municipio
+	cnpjObj.UF = result.UF
 
 	// Adiciona sócios
 	for _, socio := range result.QSA {
